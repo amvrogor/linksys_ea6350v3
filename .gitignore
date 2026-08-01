@@ -1,0 +1,14 @@
+bin/
+build_dir/
+dl/
+logs/
+tmp/
+staging_dir/
+feeds/
+packages.tmp/
+*.img
+*.bin
+*.tar
+*.tar.gz
+*.ipk
+*.apk
