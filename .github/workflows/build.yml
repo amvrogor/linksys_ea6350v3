@@ -1,0 +1,14 @@
+name: Build OpenWrt
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Done
+        run: echo "Repository is ready."
