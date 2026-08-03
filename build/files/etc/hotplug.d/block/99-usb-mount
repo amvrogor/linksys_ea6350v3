@@ -1,0 +1,5 @@
+#!/bin/sh
+
+logger -t USB-MANAGER "Block hotplug event: ACTION=$ACTION DEVNAME=$DEVNAME"
+
+exit 0
