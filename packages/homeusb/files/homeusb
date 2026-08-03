@@ -4,9 +4,11 @@
 START=95
 
 start() {
-    logger -t HOMEUSB "HomeUSB started"
+	logger -t homeusb "HomeUSB service started"
+	return 0
 }
 
 stop() {
-    logger -t HOMEUSB "HomeUSB stopped"
+	logger -t homeusb "HomeUSB service stopped"
+	return 0
 }
