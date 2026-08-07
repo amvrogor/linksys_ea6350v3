@@ -59,3 +59,5 @@ luci-app-wol
 luci-app-nlbwmon
 
 nlbwmon
+
+ea6350-defaults
