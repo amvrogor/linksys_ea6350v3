@@ -95,14 +95,14 @@ jobs:
         run: |
           git clone \
             --single-branch \
-            --branch ${REPO_BRANCH} \
-            ${REPO_URL} \
+            --branch "${REPO_BRANCH}" \
+            "${REPO_URL}" \
             openwrt
 
       - name: Show OpenWrt version
         run: |
           cd openwrt
-          git branch
+          git branch --show-current
           git log -1 --oneline
 
       - name: Update feeds
@@ -115,6 +115,18 @@ jobs:
           cd openwrt
           ./scripts/feeds install -a
 
+      - name: Add Home Edition packages
+        run: |
+          mkdir -p openwrt/package/homeedition
+          cp -a packages/. openwrt/package/homeedition/
+
+      - name: Add custom files
+        run: |
+          if [ -d build/files ]; then
+            mkdir -p openwrt/files
+            cp -a build/files/. openwrt/files/
+          fi
+
       - name: Create configuration
         run: |
           cd openwrt
@@ -125,12 +137,57 @@ jobs:
           CONFIG_TARGET_ipq40xx_generic_DEVICE_linksys_ea6350v3=y
           EOF
 
+          while IFS= read -r package; do
+            case "$package" in
+              ""|\#*)
+                continue
+                ;;
+            esac
+
+            package="$(printf '%s' "$package" | sed 's/[[:space:]]*#.*$//' | xargs)"
+
+            [ -z "$package" ] && continue
+
+            printf 'CONFIG_PACKAGE_%s=y\n' "$package" >> .config
+          done < ../build/packages.txt
+
+          echo
+          echo "Requested packages:"
+          grep '^CONFIG_PACKAGE_' .config || true
+
           make defconfig
+
+      - name: Check requested packages
+        run: |
+          cd openwrt
+
+          echo "=== Requested package status ==="
+
+          while IFS= read -r package; do
+            case "$package" in
+              ""|\#*)
+                continue
+                ;;
+            esac
+
+            package="$(printf '%s' "$package" | sed 's/[[:space:]]*#.*$//' | xargs)"
+
+            [ -z "$package" ] && continue
+
+            if grep -q "^CONFIG_PACKAGE_${package}=y$" .config; then
+              echo "[OK] $package"
+            elif grep -q "^# CONFIG_PACKAGE_${package} is not set$" .config; then
+              echo "[NOT SELECTED] $package"
+            else
+              echo "[UNKNOWN] $package"
+            fi
+          done < ../build/packages.txt
 
       - name: Show target configuration
         run: |
           cd openwrt
-          grep CONFIG_TARGET .config
+          echo "=== Target ==="
+          grep '^CONFIG_TARGET' .config || true
 
       - name: Download sources
         run: |
@@ -145,12 +202,13 @@ jobs:
       - name: Show firmware files
         if: always()
         run: |
-          ls -R openwrt/bin/targets || true
+          echo "=== Firmware output ==="
+          find openwrt/bin/targets/ipq40xx/generic -maxdepth 1 -type f -printf '%f\n' 2>/dev/null || true
 
       - name: Upload firmware
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_EA6350v3
+          name: OpenWrt_EA6350v3_HomeEdition
           path: |
             openwrt/bin/targets/ipq40xx/generic/*
