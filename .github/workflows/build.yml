@@ -151,14 +151,28 @@ jobs:
           done < ../build/packages.txt
 
           echo
-          echo "Requested packages:"
+          echo "=== Requested packages before defconfig ==="
           grep '^CONFIG_PACKAGE_' .config || true
 
           make defconfig
 
+          echo
+          echo "=== Force Home Edition package ==="
+          echo 'CONFIG_PACKAGE_ea6350-defaults=y' >> .config
+
+          make defconfig
+
+          echo
+          echo "=== Final Home Edition package configuration ==="
+          grep 'CONFIG_PACKAGE_ea6350-defaults' .config || true
+
       - name: Check requested packages
         run: |
           cd openwrt
+
+          echo "=== Home Edition package ==="
+          grep -E 'CONFIG_PACKAGE_ea6350-defaults' .config || true
+          echo
 
           echo "=== Requested package status ==="
 
