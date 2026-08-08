@@ -117,8 +117,7 @@ jobs:
 
       - name: Add Home Edition packages
         run: |
-          mkdir -p openwrt/package/homeedition
-          cp -a packages/. openwrt/package/homeedition/
+          cp -a packages/. openwrt/package/
 
       - name: Add custom files
         run: |
