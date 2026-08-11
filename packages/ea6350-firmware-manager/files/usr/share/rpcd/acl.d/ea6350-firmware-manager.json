@@ -1,0 +1,15 @@
+{
+	"luci-app-ea6350-firmware-manager": {
+		"description": "EA6350 firmware manager",
+		"read": {
+			"ubus": {
+				"luci.ea6350_firmware_manager": [ "status" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.ea6350_firmware_manager": [ "status", "switch", "flash" ]
+			}
+		}
+	}
+}

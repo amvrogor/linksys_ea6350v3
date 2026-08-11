@@ -1,0 +1,4 @@
+config ea6350 'main'
+	option allow_oem_overwrite '0'
+	option image_dir '/tmp'
+	option reboot_after_switch '1'

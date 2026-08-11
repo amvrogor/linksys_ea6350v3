@@ -1,0 +1,13 @@
+{
+	"admin/system/ea6350-firmware-manager": {
+		"title": "EA6350 Firmware Manager",
+		"order": 55,
+		"action": {
+			"type": "view",
+			"path": "system/ea6350-firmware-manager"
+		},
+		"depends": {
+			"acl": [ "luci-app-ea6350-firmware-manager" ]
+		}
+	}
+}

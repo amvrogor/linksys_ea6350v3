@@ -20,8 +20,6 @@ minidlna
 
 vsftpd
 
-luci-app-vsftpd
-
 kmod-usb-storage
 
 kmod-fs-ext4
@@ -61,3 +59,5 @@ luci-app-nlbwmon
 nlbwmon
 
 ea6350-defaults
+
+ea6350-firmware-manager

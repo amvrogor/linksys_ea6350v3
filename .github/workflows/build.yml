@@ -166,6 +166,10 @@ jobs:
           echo "=== Final Home Edition package configuration ==="
           grep 'CONFIG_PACKAGE_ea6350-defaults' .config || true
 
+          echo
+          echo "=== Firmware Manager package configuration ==="
+          grep 'CONFIG_PACKAGE_ea6350-firmware-manager' .config || true
+
       - name: Check requested packages
         run: |
           cd openwrt
@@ -212,11 +216,25 @@ jobs:
           cd openwrt
           make -j$(nproc) || make -j1 V=s
 
+      - name: Build firmware manager package separately
+        run: |
+          cd openwrt
+          make package/ea6350-firmware-manager/compile V=s
+
       - name: Show firmware files
         if: always()
         run: |
           echo "=== Firmware output ==="
           find openwrt/bin/targets/ipq40xx/generic -maxdepth 1 -type f -printf '%f\n' 2>/dev/null || true
+
+      - name: Show firmware manager package
+        if: always()
+        run: |
+          echo "=== Firmware Manager package output ==="
+          find openwrt/bin/packages -type f \
+            \( -name 'ea6350-firmware-manager*.apk' -o \
+               -name 'ea6350-firmware-manager*.ipk' \) \
+            -print 2>/dev/null || true
 
       - name: Upload firmware
         if: success()
@@ -225,3 +243,13 @@ jobs:
           name: OpenWrt_EA6350v3_HomeEdition
           path: |
             openwrt/bin/targets/ipq40xx/generic/*
+
+      - name: Upload firmware manager package
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ea6350-firmware-manager-1.0.1
+          path: |
+            openwrt/bin/packages/**/ea6350-firmware-manager*.apk
+            openwrt/bin/packages/**/ea6350-firmware-manager*.ipk
+          if-no-files-found: error
