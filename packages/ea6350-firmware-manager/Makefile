@@ -1,46 +1,45 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-firmware-manager
-PKG_VERSION:=1.0.2
+PKG_VERSION:=1.0.3
 PKG_RELEASE:=1
+
+PKG_MAINTAINER:=EA6350 Home Edition
+PKGARCH:=all
 
 include $(INCLUDE_DIR)/package.mk
 
 define Package/ea6350-firmware-manager
   SECTION:=utils
   CATEGORY:=Utilities
-  TITLE:=Linksys EA6350v3 dual-firmware manager
-  DEPENDS:=+uboot-envtools +mtd +luci-base
+  TITLE:=Linksys EA6350v3 firmware slot manager
+  DEPENDS:=+fwtool +uboot-envtools +luci-base
 endef
 
 define Package/ea6350-firmware-manager/description
-Safe dual-firmware manager for Linksys EA6350v3. Shows both slots,
-detects OEM/OpenWrt, switches boot slot, and safely flashes an image
-to the inactive slot with an explicit OEM overwrite guard.
+  Read-only firmware slot/status manager for Linksys EA6350v3.
+  This initial version is intentionally read-only and does not modify flash
+  or U-Boot environment variables.
 endef
 
-define Package/ea6350-firmware-manager/conffiles
-/etc/config/ea6350-firmware-manager
+define Build/Configure
 endef
 
-define Package/ea6350-firmware-manager/install
-	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) ./files/etc/config/ea6350-firmware-manager $(1)/etc/config/
+define Build/Compile
+endef
 
+define Build/Install
 	$(INSTALL_DIR) $(1)/usr/sbin
-	$(INSTALL_BIN) ./files/usr/sbin/ea6350-firmware-manager $(1)/usr/sbin/
-
-	$(INSTALL_DIR) $(1)/usr/libexec/rpcd
-	$(INSTALL_BIN) ./files/usr/libexec/rpcd/luci.ea6350_firmware_manager $(1)/usr/libexec/rpcd/
-
-	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
-	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/ea6350-firmware-manager.json $(1)/usr/share/rpcd/acl.d/
-
-	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/system
-	$(INSTALL_DATA) ./files/www/luci-static/resources/view/system/ea6350-firmware-manager.js $(1)/www/luci-static/resources/view/system/
+	$(INSTALL_BIN) ./files/usr/sbin/ea6350-firmware-manager-status $(1)/usr/sbin/
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
-	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/ea6350-firmware-manager.json $(1)/usr/share/luci/menu.d/
+	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/luci-app-ea6350-firmware-manager.json $(1)/usr/share/luci/menu.d/
+
+	$(INSTALL_DIR) $(1)/usr/share/luci/controller
+	$(INSTALL_DATA) ./files/usr/share/luci/controller/ea6350_firmware_manager.lua $(1)/usr/share/luci/controller/
+
+	$(INSTALL_DIR) $(1)/usr/share/luci/view/ea6350_firmware_manager
+	$(INSTALL_DATA) ./files/usr/share/luci/view/ea6350_firmware_manager/status.htm $(1)/usr/share/luci/view/ea6350_firmware_manager/status.htm
 endef
 
 $(eval $(call BuildPackage,ea6350-firmware-manager))

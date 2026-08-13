@@ -1,0 +1,40 @@
+#!/bin/sh
+
+model="$(cat /tmp/sysinfo/model 2>/dev/null || cat /proc/device-tree/model 2>/dev/null)"
+board="$(ubus call system board 2>/dev/null | sed -n 's/.*"board_name": "\([^"]*\)".*/\1/p' | head -n1)"
+version="$(ubus call system board 2>/dev/null | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -n1)"
+boot_part="$(fw_printenv -n boot_part 2>/dev/null | head -n1)"
+prikern="$(fw_printenv -n prikern 2>/dev/null | head -n1)"
+altkern="$(fw_printenv -n altkern 2>/dev/null | head -n1)"
+kernsize="$(fw_printenv -n kernsize 2>/dev/null | head -n1)"
+partbootargs="$(fw_printenv -n partbootargs 2>/dev/null | head -n1)"
+partbootargs2="$(fw_printenv -n partbootargs2 2>/dev/null | head -n1)"
+
+printf 'Model: %s\n' "$model"
+printf 'Board: %s\n' "$board"
+printf 'OpenWrt version: %s\n' "$version"
+printf 'Active boot_part: %s\n' "${boot_part:-unknown}"
+printf 'Primary kernel offset: %s\n' "${prikern:-unknown}"
+printf 'Alternate kernel offset: %s\n' "${altkern:-unknown}"
+printf 'Kernel read size: %s\n' "${kernsize:-unknown}"
+
+case "$boot_part" in
+  1)
+    printf 'Active slot: primary (mtd10/mtd11)\n'
+    printf 'Alternate slot: alternate (mtd12/mtd13)\n'
+    ;;
+  2)
+    printf 'Active slot: alternate (mtd12/mtd13)\n'
+    printf 'Alternate slot: primary (mtd10/mtd11)\n'
+    ;;
+  *)
+    printf 'Active slot: unknown\n'
+    ;;
+esac
+
+printf '\nBoot arguments:\n'
+printf '  primary: %s\n' "${partbootargs:-not available}"
+printf '  alternate: %s\n' "${partbootargs2:-not available}"
+
+printf '\nMTD layout:\n'
+cat /proc/mtd 2>/dev/null
