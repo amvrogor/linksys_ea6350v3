@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-firmware-manager
-PKG_VERSION:=1.0.3
+PKG_VERSION:=1.0.4
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=EA6350 Home Edition
@@ -22,24 +22,22 @@ define Package/ea6350-firmware-manager/description
   or U-Boot environment variables.
 endef
 
-define Build/Configure
-endef
-
-define Build/Compile
-endef
-
-define Build/Install
+define Package/ea6350-firmware-manager/install
 	$(INSTALL_DIR) $(1)/usr/sbin
-	$(INSTALL_BIN) ./files/usr/sbin/ea6350-firmware-manager-status $(1)/usr/sbin/
+	$(INSTALL_BIN) ./files/usr/sbin/ea6350-firmware-manager-status \
+		$(1)/usr/sbin/ea6350-firmware-manager-status
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
-	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/luci-app-ea6350-firmware-manager.json $(1)/usr/share/luci/menu.d/
+	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/luci-app-ea6350-firmware-manager.json \
+		$(1)/usr/share/luci/menu.d/luci-app-ea6350-firmware-manager.json
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/controller
-	$(INSTALL_DATA) ./files/usr/share/luci/controller/ea6350_firmware_manager.lua $(1)/usr/share/luci/controller/
+	$(INSTALL_DATA) ./files/usr/share/luci/controller/ea6350_firmware_manager.lua \
+		$(1)/usr/share/luci/controller/ea6350_firmware_manager.lua
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/view/ea6350_firmware_manager
-	$(INSTALL_DATA) ./files/usr/share/luci/view/ea6350_firmware_manager/status.htm $(1)/usr/share/luci/view/ea6350_firmware_manager/status.htm
+	$(INSTALL_DATA) ./files/usr/share/luci/view/ea6350_firmware_manager/status.htm \
+		$(1)/usr/share/luci/view/ea6350_firmware_manager/status.htm
 endef
 
 $(eval $(call BuildPackage,ea6350-firmware-manager))
