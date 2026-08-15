@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-firmware-manager
-PKG_VERSION:=1.0.5
+PKG_VERSION:=1.0.6
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=EA6350 Home Edition
@@ -17,7 +17,7 @@ define Package/ea6350-firmware-manager
 endef
 
 define Package/ea6350-firmware-manager/description
-  Read-only firmware slot/status manager for Linksys EA6350v3.
+  Read-only firmware slot and status manager for Linksys EA6350v3.
   This version only reads firmware slot information and does not
   modify flash or U-Boot environment variables.
 endef
@@ -32,9 +32,10 @@ define Build/Compile
 	:
 endef
 
-define Build/Install
+define Package/ea6350-firmware-manager/install
 	$(INSTALL_DIR) $(1)/usr/sbin
-	$(INSTALL_BIN) ./files/usr/sbin/ea6350-firmware-manager-status \
+	$(INSTALL_BIN) \
+		./files/usr/sbin/ea6350-firmware-manager-status \
 		$(1)/usr/sbin/
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
@@ -50,7 +51,7 @@ define Build/Install
 	$(INSTALL_DIR) $(1)/usr/share/luci/view/ea6350_firmware_manager
 	$(INSTALL_DATA) \
 		./files/usr/share/luci/view/ea6350_firmware_manager/status.htm \
-		$(1)/usr/share/luci/view/ea6350_firmware_manager/status.htm
+		$(1)/usr/share/luci/view/ea6350_firmware_manager/
 endef
 
 $(eval $(call BuildPackage,ea6350-firmware-manager))
