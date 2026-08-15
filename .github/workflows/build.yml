@@ -243,13 +243,46 @@ jobs:
           name: OpenWrt_EA6350v3_HomeEdition
           path: |
             openwrt/bin/targets/ipq40xx/generic/*
+      - name: Locate firmware manager package
+        run: |
+          echo "=== Searching for firmware manager package ==="
+
+          find openwrt/bin \
+            -type f \
+            \( \
+              -name 'ea6350-firmware-manager*.apk' \
+              -o \
+              -name 'ea6350-firmware-manager*.ipk' \
+            \) \
+            -print
+
+      - name: Prepare firmware manager artifact
+        run: |
+          rm -rf artifact
+          mkdir -p artifact
+
+          find openwrt/bin \
+            -type f \
+            \( \
+              -name 'ea6350-firmware-manager*.apk' \
+              -o \
+              -name 'ea6350-firmware-manager*.ipk' \
+            \) \
+            -exec cp -v {} artifact/ \;
+
+          echo
+          echo "=== Artifact directory ==="
+          ls -lah artifact
+
+          if ! find artifact -type f | grep -q .; then
+            echo "ERROR: ea6350-firmware-manager package was not found"
+            exit 1
+          fi
 
       - name: Upload firmware manager package
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ea6350-firmware-manager-1.0.1
-          path: |
-            openwrt/bin/packages/**/ea6350-firmware-manager*.apk
-            openwrt/bin/packages/**/ea6350-firmware-manager*.ipk
+          name: ea6350-firmware-manager-1.0.5
+          path: artifact/*
           if-no-files-found: error
+      
