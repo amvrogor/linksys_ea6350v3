@@ -1,6 +1,9 @@
 {
     "admin/system/ea6350-firmware-manager": {
         "title": "EA6350 Firmware Manager",
-        "order": 95
+        "order": 95,
+        "action": {
+            "type": "firstchild"
+        }
     }
 }
