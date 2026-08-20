@@ -3,7 +3,17 @@
         "title": "EA6350 Firmware Manager",
         "order": 95,
         "action": {
-            "type": "firstchild"
+            "type": "alias",
+            "path": "admin/system/ea6350-firmware-manager/status"
+        }
+    },
+
+    "admin/system/ea6350-firmware-manager/status": {
+        "title": "Status",
+        "order": 1,
+        "action": {
+            "type": "template",
+            "path": "ea6350_firmware_manager/status"
         }
     }
 }
