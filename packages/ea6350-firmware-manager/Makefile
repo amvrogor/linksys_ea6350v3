@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-firmware-manager
-PKG_VERSION:=1.0.11
+PKG_VERSION:=1.0.12
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=EA6350 Home Edition
@@ -43,10 +43,16 @@ define Package/ea6350-firmware-manager/install
 		./files/usr/share/luci/menu.d/luci-app-ea6350-firmware-manager.json \
 		$(1)/usr/share/luci/menu.d/
 
-	$(INSTALL_DIR) $(1)/usr/share/luci/view/ea6350_firmware_manager
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_DATA) \
-		./files/usr/share/luci/view/ea6350_firmware_manager/status.htm \
-		$(1)/usr/share/luci/view/ea6350_firmware_manager/
+		./files/usr/share/rpcd/acl.d/luci-app-ea6350-firmware-manager.json \
+		$(1)/usr/share/rpcd/acl.d/
+
+	$(INSTALL_DIR) \
+		$(1)/www/luci-static/resources/view/ea6350_firmware_manager
+	$(INSTALL_DATA) \
+		./files/www/luci-static/resources/view/ea6350_firmware_manager/status.js \
+		$(1)/www/luci-static/resources/view/ea6350_firmware_manager/
 endef
 
 $(eval $(call BuildPackage,ea6350-firmware-manager))
