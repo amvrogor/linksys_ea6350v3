@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-firmware-manager
-PKG_VERSION:=1.0.9
+PKG_VERSION:=1.0.10
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=EA6350 Home Edition
@@ -42,6 +42,11 @@ define Package/ea6350-firmware-manager/install
 	$(INSTALL_DATA) \
 		./files/usr/share/luci/menu.d/luci-app-ea6350-firmware-manager.json \
 		$(1)/usr/share/luci/menu.d/
+
+	$(INSTALL_DIR) $(1)/usr/share/luci/controller
+	$(INSTALL_DATA) \
+		./files/usr/share/luci/controller/ea6350_firmware_manager.lua \
+		$(1)/usr/share/luci/controller/
 
 	$(INSTALL_DIR) $(1)/usr/share/luci/view/ea6350_firmware_manager
 	$(INSTALL_DATA) \
