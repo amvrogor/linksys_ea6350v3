@@ -5,6 +5,11 @@
         "action": {
             "type": "view",
             "path": "ea6350_firmware_manager/status"
+        },
+        "depends": {
+            "acl": [
+                "luci-app-ea6350-firmware-manager"
+            ]
         }
     }
 }
