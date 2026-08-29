@@ -3,20 +3,36 @@
 # Linksys EA6350v3 Firmware Manager
 # Read-only firmware identification.
 # Does not modify flash or U-Boot environment.
+#
+# Version: 1.0.15
 
 get_env()
 {
 	fw_printenv -n "$1" 2>/dev/null | head -n1
 }
 
-identify_openwrt()
+read_kernel_strings()
 {
 	local kernel="$1"
+	local size_mb="$2"
+	local output="$3"
+
+	dd if="$kernel" bs=1M count="$size_mb" 2>/dev/null |
+		strings > "$output"
+}
+
+identify_openwrt()
+{
+	local strings_file="$1"
 
 	echo "  Firmware: OpenWrt"
 
-	kver="$(strings "$kernel" 2>/dev/null | \
-		sed -n 's/.*ARM OpenWrt Linux-\([0-9][0-9.]*\).*/\1/p' | head -n1)"
+	kver="$(
+		sed -n \
+			's/.*ARM OpenWrt Linux-\([0-9][0-9.]*\).*/\1/p' \
+			"$strings_file" |
+		head -n1
+	)"
 
 	if [ -n "$kver" ]; then
 		echo "  Kernel: $kver"
@@ -24,8 +40,12 @@ identify_openwrt()
 		echo "  Kernel: unknown"
 	fi
 
-	marker="$(strings "$kernel" 2>/dev/null | \
-		grep -E 'ARM OpenWrt FIT|OpenWrt linksys_ea6350v3' | head -n1)"
+	marker="$(
+		grep -E \
+			'ARM OpenWrt FIT|ARM OpenWrt Linux-|ARM OpenWrt linksys_ea6350v3|OpenWrt linksys_ea6350v3' \
+			"$strings_file" |
+		head -n1
+	)"
 
 	if [ -n "$marker" ]; then
 		echo "  OpenWrt marker: $marker"
@@ -34,13 +54,17 @@ identify_openwrt()
 
 identify_stock()
 {
-	local kernel="$1"
+	local strings_file="$1"
 
 	echo "  Firmware: Linksys stock (Civic)"
 
-	kver="$(strings "$kernel" 2>/dev/null | \
-		sed -n 's/.*[^0-9]\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | \
-		sort -u | head -n1)"
+	kver="$(
+		grep -Eo \
+			'([0-9]+\.){2,3}[0-9]+' \
+			"$strings_file" |
+		sort -u |
+		head -n1
+	)"
 
 	if [ -n "$kver" ]; then
 		echo "  Version marker: $kver"
@@ -48,9 +72,12 @@ identify_stock()
 		echo "  Version marker: unknown"
 	fi
 
-	marker="$(strings "$kernel" 2>/dev/null | \
-		grep -E 'ARM Linksys Civic device tree blob|Linksys EA6350v3 based on Qualcomm' | \
-		head -n1)"
+	marker="$(
+		grep -E \
+			'ARM Linksys Civic device tree blob|Linksys EA6350v3 based on Qualcomm' \
+			"$strings_file" |
+		head -n1
+	)"
 
 	if [ -n "$marker" ]; then
 		echo "  Civic marker: $marker"
@@ -61,7 +88,8 @@ identify_slot()
 {
 	local name="$1"
 	local kernel="$2"
-	local rootfs="$3"
+	local scan_size="$3"
+	local tmpfile="$4"
 
 	echo "$name:"
 
@@ -71,23 +99,37 @@ identify_slot()
 		return
 	fi
 
-	# OpenWrt kernel markers.
-	if strings "$kernel" 2>/dev/null | grep -Eq \
-		'ARM OpenWrt FIT|ARM OpenWrt Linux-|ARM OpenWrt linksys_ea6350v3|OpenWrt linksys_ea6350v3'
+	read_kernel_strings "$kernel" "$scan_size" "$tmpfile"
+
+	if [ ! -s "$tmpfile" ]; then
+		echo "  Firmware: unable to read firmware data"
+		echo
+		return
+	fi
+
+	# OpenWrt markers.
+	if grep -Eq \
+		'ARM OpenWrt FIT|ARM OpenWrt Linux-|ARM OpenWrt linksys_ea6350v3|OpenWrt linksys_ea6350v3' \
+		"$tmpfile"
 	then
-		identify_openwrt "$kernel"
+		identify_openwrt "$tmpfile"
 
 	# Linksys stock Civic markers.
-	elif strings "$kernel" 2>/dev/null | grep -Eq \
-		'ARM Linksys Civic device tree blob|Linksys EA6350v3 based on Qualcomm'
+	elif grep -Eq \
+		'ARM Linksys Civic device tree blob|Linksys EA6350v3 based on Qualcomm' \
+		"$tmpfile"
 	then
-		identify_stock "$kernel"
+		identify_stock "$tmpfile"
 
 	else
 		echo "  Firmware: unknown"
 
-		marker="$(strings "$kernel" 2>/dev/null | \
-			grep -Ei 'OpenWrt|Linksys|Civic|Linux' | head -n3)"
+		marker="$(
+			grep -Ei \
+				'OpenWrt|Linksys|Civic|Linux' \
+				"$tmpfile" |
+			head -n3
+		)"
 
 		if [ -n "$marker" ]; then
 			echo "  Detected markers:"
@@ -98,14 +140,34 @@ identify_slot()
 	echo
 }
 
-model="$(cat /tmp/sysinfo/model 2>/dev/null || \
-	cat /proc/device-tree/model 2>/dev/null)"
+TMPDIR="/tmp/ea6350-firmware-manager"
+mkdir -p "$TMPDIR"
 
-board="$(ubus call system board 2>/dev/null | \
-	sed -n 's/.*"board_name": "\([^"]*\)".*/\1/p' | head -n1)"
+PRIMARY_STRINGS="$TMPDIR/primary-kernel.strings"
+ALTERNATE_STRINGS="$TMPDIR/alternate-kernel.strings"
 
-version="$(ubus call system board 2>/dev/null | \
-	sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -n1)"
+trap '
+	rm -f \
+		"$PRIMARY_STRINGS" \
+		"$ALTERNATE_STRINGS"
+' EXIT INT TERM
+
+model="$(
+	cat /tmp/sysinfo/model 2>/dev/null ||
+	cat /proc/device-tree/model 2>/dev/null
+)"
+
+board="$(
+	ubus call system board 2>/dev/null |
+	sed -n 's/.*"board_name": "\([^"]*\)".*/\1/p' |
+	head -n1
+)"
+
+version="$(
+	ubus call system board 2>/dev/null |
+	sed -n 's/.*"version": "\([^"]*\)".*/\1/p' |
+	head -n1
+)"
 
 boot_part="$(get_env boot_part)"
 prikern="$(get_env prikern)"
@@ -140,15 +202,20 @@ esac
 
 printf '\nFirmware identification:\n\n'
 
+# OpenWrt identification markers are present in the first MiB.
 identify_slot \
 	"Primary slot (mtd10/mtd11)" \
 	/dev/mtd10ro \
-	/dev/mtd11ro
+	1 \
+	"$PRIMARY_STRINGS"
 
+# Linksys Civic marker was found in MiB block 2.
+# Read the first 3 MiB to include blocks 0, 1 and 2.
 identify_slot \
 	"Alternate slot (mtd12/mtd13)" \
 	/dev/mtd12ro \
-	/dev/mtd13ro
+	3 \
+	"$ALTERNATE_STRINGS"
 
 printf 'Boot arguments:\n'
 printf '  primary: %s\n' "${partbootargs:-not available}"
