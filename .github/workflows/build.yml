@@ -282,7 +282,7 @@ jobs:
       - name: Upload firmware manager package
         uses: actions/upload-artifact@v4
         with:
-          name: ea6350-firmware-manager-1.0.5
+          name: ea6350-firmware-manager-1.0.14
           path: artifact/*
           if-no-files-found: error
       

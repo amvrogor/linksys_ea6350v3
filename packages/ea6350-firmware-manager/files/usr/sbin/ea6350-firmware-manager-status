@@ -1,38 +1,156 @@
 #!/bin/sh
 
-model="$(cat /tmp/sysinfo/model 2>/dev/null || cat /proc/device-tree/model 2>/dev/null)"
-board="$(ubus call system board 2>/dev/null | sed -n 's/.*"board_name": "\([^"]*\)".*/\1/p' | head -n1)"
-version="$(ubus call system board 2>/dev/null | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -n1)"
-boot_part="$(fw_printenv -n boot_part 2>/dev/null | head -n1)"
-prikern="$(fw_printenv -n prikern 2>/dev/null | head -n1)"
-altkern="$(fw_printenv -n altkern 2>/dev/null | head -n1)"
-kernsize="$(fw_printenv -n kernsize 2>/dev/null | head -n1)"
-partbootargs="$(fw_printenv -n partbootargs 2>/dev/null | head -n1)"
-partbootargs2="$(fw_printenv -n partbootargs2 2>/dev/null | head -n1)"
+# Linksys EA6350v3 Firmware Manager
+# Read-only firmware identification.
+# Does not modify flash or U-Boot environment.
+
+get_env()
+{
+	fw_printenv -n "$1" 2>/dev/null | head -n1
+}
+
+identify_openwrt()
+{
+	local kernel="$1"
+
+	echo "  Firmware: OpenWrt"
+
+	kver="$(strings "$kernel" 2>/dev/null | \
+		sed -n 's/.*ARM OpenWrt Linux-\([0-9][0-9.]*\).*/\1/p' | head -n1)"
+
+	if [ -n "$kver" ]; then
+		echo "  Kernel: $kver"
+	else
+		echo "  Kernel: unknown"
+	fi
+
+	marker="$(strings "$kernel" 2>/dev/null | \
+		grep -E 'ARM OpenWrt FIT|OpenWrt linksys_ea6350v3' | head -n1)"
+
+	if [ -n "$marker" ]; then
+		echo "  OpenWrt marker: $marker"
+	fi
+}
+
+identify_stock()
+{
+	local kernel="$1"
+
+	echo "  Firmware: Linksys stock (Civic)"
+
+	kver="$(strings "$kernel" 2>/dev/null | \
+		sed -n 's/.*[^0-9]\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | \
+		sort -u | head -n1)"
+
+	if [ -n "$kver" ]; then
+		echo "  Version marker: $kver"
+	else
+		echo "  Version marker: unknown"
+	fi
+
+	marker="$(strings "$kernel" 2>/dev/null | \
+		grep -E 'ARM Linksys Civic device tree blob|Linksys EA6350v3 based on Qualcomm' | \
+		head -n1)"
+
+	if [ -n "$marker" ]; then
+		echo "  Civic marker: $marker"
+	fi
+}
+
+identify_slot()
+{
+	local name="$1"
+	local kernel="$2"
+	local rootfs="$3"
+
+	echo "$name:"
+
+	if [ ! -r "$kernel" ]; then
+		echo "  Firmware: unable to read kernel"
+		echo
+		return
+	fi
+
+	# OpenWrt kernel markers.
+	if strings "$kernel" 2>/dev/null | grep -Eq \
+		'ARM OpenWrt FIT|ARM OpenWrt Linux-|ARM OpenWrt linksys_ea6350v3|OpenWrt linksys_ea6350v3'
+	then
+		identify_openwrt "$kernel"
+
+	# Linksys stock Civic markers.
+	elif strings "$kernel" 2>/dev/null | grep -Eq \
+		'ARM Linksys Civic device tree blob|Linksys EA6350v3 based on Qualcomm'
+	then
+		identify_stock "$kernel"
+
+	else
+		echo "  Firmware: unknown"
+
+		marker="$(strings "$kernel" 2>/dev/null | \
+			grep -Ei 'OpenWrt|Linksys|Civic|Linux' | head -n3)"
+
+		if [ -n "$marker" ]; then
+			echo "  Detected markers:"
+			echo "$marker" | sed 's/^/    /'
+		fi
+	fi
+
+	echo
+}
+
+model="$(cat /tmp/sysinfo/model 2>/dev/null || \
+	cat /proc/device-tree/model 2>/dev/null)"
+
+board="$(ubus call system board 2>/dev/null | \
+	sed -n 's/.*"board_name": "\([^"]*\)".*/\1/p' | head -n1)"
+
+version="$(ubus call system board 2>/dev/null | \
+	sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -n1)"
+
+boot_part="$(get_env boot_part)"
+prikern="$(get_env prikern)"
+altkern="$(get_env altkern)"
+kernsize="$(get_env kernsize)"
+partbootargs="$(get_env partbootargs)"
+partbootargs2="$(get_env partbootargs2)"
 
 printf 'Model: %s\n' "$model"
 printf 'Board: %s\n' "$board"
 printf 'OpenWrt version: %s\n' "$version"
 printf 'Active boot_part: %s\n' "${boot_part:-unknown}"
+
 printf 'Primary kernel offset: %s\n' "${prikern:-unknown}"
 printf 'Alternate kernel offset: %s\n' "${altkern:-unknown}"
 printf 'Kernel read size: %s\n' "${kernsize:-unknown}"
 
 case "$boot_part" in
-  1)
-    printf 'Active slot: primary (mtd10/mtd11)\n'
-    printf 'Alternate slot: alternate (mtd12/mtd13)\n'
-    ;;
-  2)
-    printf 'Active slot: alternate (mtd12/mtd13)\n'
-    printf 'Alternate slot: primary (mtd10/mtd11)\n'
-    ;;
-  *)
-    printf 'Active slot: unknown\n'
-    ;;
+	1)
+		printf 'Active slot: primary (mtd10/mtd11)\n'
+		printf 'Alternate slot: alternate (mtd12/mtd13)\n'
+		;;
+	2)
+		printf 'Active slot: alternate (mtd12/mtd13)\n'
+		printf 'Alternate slot: primary (mtd10/mtd11)\n'
+		;;
+	*)
+		printf 'Active slot: unknown\n'
+		printf 'Alternate slot: unknown\n'
+		;;
 esac
 
-printf '\nBoot arguments:\n'
+printf '\nFirmware identification:\n\n'
+
+identify_slot \
+	"Primary slot (mtd10/mtd11)" \
+	/dev/mtd10ro \
+	/dev/mtd11ro
+
+identify_slot \
+	"Alternate slot (mtd12/mtd13)" \
+	/dev/mtd12ro \
+	/dev/mtd13ro
+
+printf 'Boot arguments:\n'
 printf '  primary: %s\n' "${partbootargs:-not available}"
 printf '  alternate: %s\n' "${partbootargs2:-not available}"
 
