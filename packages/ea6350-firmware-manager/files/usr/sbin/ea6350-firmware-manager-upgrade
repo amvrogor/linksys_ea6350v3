@@ -1,0 +1,145 @@
+#!/bin/sh
+
+#
+# Linksys EA6350v3 Firmware Manager
+# Version 1.0.16
+#
+# Firmware installation backend.
+#
+# inactive:
+#   Uses the native OpenWrt sysupgrade mechanism.
+#   The stock EA6350v3 platform upgrade code selects the inactive slot.
+#
+# current:
+#   Only reports the partitions that would be required.
+#   Direct current-slot flashing is intentionally not performed from
+#   the running rootfs.
+#
+
+IMAGE="$1"
+MODE="$2"
+KEEP="$3"
+
+die()
+{
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+get_env()
+{
+	fw_printenv -n "$1" 2>/dev/null | head -n1
+}
+
+BOARD="$(ubus call system board 2>/dev/null | \
+	sed -n 's/.*"board_name": "\([^"]*\)".*/\1/p' | head -n1)"
+
+[ "$BOARD" = "linksys,ea6350v3" ] || \
+	die "This firmware manager is intended only for Linksys EA6350v3"
+
+[ -n "$IMAGE" ] || die "Firmware image not specified"
+
+[ -f "$IMAGE" ] || die "Firmware image does not exist: $IMAGE"
+
+case "$MODE" in
+	inactive|current)
+		;;
+	*)
+		die "Invalid mode. Use inactive or current"
+		;;
+esac
+
+boot_part="$(get_env boot_part)"
+
+case "$boot_part" in
+	1|2)
+		;;
+	*)
+		die "Cannot determine boot_part"
+		;;
+esac
+
+if [ "$boot_part" = "1" ]; then
+	current_kernel="kernel"
+	current_rootfs="rootfs"
+
+	inactive_kernel="alt_kernel"
+	inactive_rootfs="alt_rootfs"
+else
+	current_kernel="alt_kernel"
+	current_rootfs="alt_rootfs"
+
+	inactive_kernel="kernel"
+	inactive_rootfs="rootfs"
+fi
+
+echo "EA6350 Firmware Manager"
+echo
+echo "Board: $BOARD"
+echo "Current boot_part: $boot_part"
+echo "Current kernel partition: $current_kernel"
+echo "Current rootfs partition: $current_rootfs"
+echo "Inactive kernel partition: $inactive_kernel"
+echo "Inactive rootfs partition: $inactive_rootfs"
+echo
+echo "Firmware image: $IMAGE"
+echo
+
+#
+# Native sysupgrade image validation.
+#
+echo "Checking firmware image..."
+
+if ! /sbin/sysupgrade -T "$IMAGE" >/dev/null 2>&1; then
+	die "Firmware image validation failed"
+fi
+
+echo "Firmware image validation: OK"
+echo
+
+case "$MODE" in
+
+	inactive)
+
+		echo "Target: INACTIVE SLOT"
+		echo "Kernel target: $inactive_kernel"
+		echo "Rootfs target: $inactive_rootfs"
+		echo
+		echo "The native OpenWrt EA6350v3 sysupgrade procedure"
+		echo "will select the inactive slot and change boot_part"
+		echo "to boot from the newly installed firmware."
+		echo
+
+		sync
+
+		case "$KEEP" in
+			1)
+				echo "Starting sysupgrade with configuration preservation..."
+				exec /sbin/sysupgrade "$IMAGE"
+				;;
+			0)
+				echo "Starting sysupgrade without configuration preservation..."
+				exec /sbin/sysupgrade -n "$IMAGE"
+				;;
+			*)
+				die "Invalid keep-settings option"
+				;;
+		esac
+		;;
+
+	current)
+
+		echo "Target: CURRENT SLOT"
+		echo "Kernel target: $current_kernel"
+		echo "Rootfs target: $current_rootfs"
+		echo
+		echo "Current-slot flashing is not executed from the running rootfs."
+		echo
+		echo "The native EA6350v3 sysupgrade code always targets:"
+		echo "the inactive slot."
+		echo
+		echo "A dedicated RAMFS/stage2 current-slot upgrade path is required."
+		echo
+		exit 10
+		;;
+esac
