@@ -13,7 +13,7 @@ define Package/ea6350-firmware-manager
   SECTION:=utils
   CATEGORY:=Utilities
   TITLE:=Linksys EA6350v3 firmware slot manager
-  DEPENDS:=+uboot-envtools +luci-base +sysupgrade
+  DEPENDS:=+uboot-envtools +luci-base
 endef
 
 define Package/ea6350-firmware-manager/description
