@@ -119,6 +119,20 @@ jobs:
         run: |
           cp -a packages/. openwrt/package/
 
+      - name: Check Firmware Manager files
+        run: |
+          echo "=== Firmware Manager source files ==="
+          find packages/ea6350-firmware-manager/files -type f -print
+
+          echo
+          echo "=== do_stage2 ==="
+          ls -l packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== Makefile install section ==="
+          grep -A80 '^define Package/ea6350-firmware-manager/install' \
+            packages/ea6350-firmware-manager/Makefile
+
       - name: Add custom files
         run: |
           if [ -d build/files ]; then
@@ -220,6 +234,41 @@ jobs:
         run: |
           cd openwrt
           make package/ea6350-firmware-manager/compile V=s
+      
+      - name: Verify Firmware Manager package
+        if: always()
+        run: |
+          echo "=== Firmware Manager package ==="
+
+          find openwrt/bin/packages \
+            -type f \
+            \( \
+              -name 'ea6350-firmware-manager*.apk' \
+              -o \
+              -name 'ea6350-firmware-manager*.ipk' \
+            \) \
+            -print
+
+          echo
+          echo "=== Package contents ==="
+
+          for pkg in $(find openwrt/bin/packages \
+            -type f \
+            \( \
+              -name 'ea6350-firmware-manager*.apk' \
+              -o \
+              -name 'ea6350-firmware-manager*.ipk' \
+            \)); do
+
+            echo
+            echo ">>> $pkg"
+
+            tar tf "$pkg" 2>/dev/null | \
+              grep -E \
+              '(^|/)(do_stage2|ea6350-firmware-manager[^/]*)($|/)' \
+              || true
+
+          done
 
       - name: Show firmware files
         if: always()
