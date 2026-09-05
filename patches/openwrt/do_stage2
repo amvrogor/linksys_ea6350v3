@@ -1,33 +1,19 @@
 #!/bin/sh
 
 #
-# Linksys EA6350v3 Firmware Manager
-# Version 1.0.17
+# Linksys EA6350v3 / OpenWrt 25.12
 #
-# Custom OpenWrt sysupgrade stage 2.
+# Modified sysupgrade stage2.
 #
-# This file is executed from the OpenWrt RAMFS environment.
+# Normal operation:
+#   platform_do_upgrade "$IMAGE"
 #
-# For normal upgrades:
+# Current-slot operation:
+#   UPGRADE_OPT_USE_CURR_PART=1
 #
-#       platform_do_upgrade "$IMAGE"
-#
-# is used exactly as in standard OpenWrt.
-#
-# For:
-#
-#       sysupgrade -s
-#
-# procd exports:
-#
-#       UPGRADE_OPT_USE_CURR_PART=1
-#
-# On EA6350v3 the native linksys.sh implementation always
-# switches the target to the inactive slot.
-#
-# Therefore current-slot mode deliberately bypasses
-# platform_do_upgrade() and calls nand_do_upgrade() with
-# explicitly selected CURRENT partitions.
+# In current-slot mode we bypass the EA6350v3
+# linksys_get_target_firmware() inactive-slot selection
+# and explicitly select the currently active partitions.
 #
 
 
@@ -44,6 +30,7 @@ v "Performing system upgrade..."
 # CURRENT-SLOT UPGRADE
 # ============================================================
 #
+
 if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 
 	echo
@@ -55,6 +42,7 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 	#
 	# Verify board.
 	#
+
 	BOARD="$(board_name)"
 
 	[ "$BOARD" = "linksys,ea6350v3" ] || {
@@ -67,6 +55,7 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 	#
 	# Verify image.
 	#
+
 	[ -n "$IMAGE" ] || {
 		echo "ERROR: firmware image is not specified"
 		exit 1
@@ -80,25 +69,30 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 
 
 	#
-	# Current-slot mode is intended for OpenWrt
-	# sysupgrade images.
+	# Current-slot mode accepts only an OpenWrt
+	# sysupgrade image.
 	#
 	# 0x73797375 = "sysu"
 	#
+
 	magic_long="$(get_magic_long "$IMAGE")"
 
 	if [ "$magic_long" != "73797375" ]; then
+
 		echo "ERROR: current-slot upgrade requires"
 		echo "       an OpenWrt sysupgrade image"
 		echo
 		echo "Image magic: $magic_long"
+
 		exit 1
+
 	fi
 
 
 	#
 	# Determine currently active firmware slot.
 	#
+
 	boot_part="$(fw_printenv -n boot_part 2>/dev/null | \
 		head -n1)"
 
@@ -110,6 +104,7 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 			#
 			# CURRENT SLOT = primary
 			#
+
 			CI_KERNPART="kernel"
 			CI_UBIPART="rootfs"
 			CI_ROOTPART="rootfs"
@@ -121,6 +116,7 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 			#
 			# CURRENT SLOT = alternate
 			#
+
 			CI_KERNPART="alt_kernel"
 			CI_UBIPART="alt_rootfs"
 			CI_ROOTPART="alt_rootfs"
@@ -131,6 +127,7 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 
 			echo "ERROR: cannot determine current boot_part:"
 			echo "       $boot_part"
+
 			exit 1
 
 			;;
@@ -139,87 +136,63 @@ if [ "$UPGRADE_OPT_USE_CURR_PART" = "1" ]; then
 
 
 	#
-	# Export variables used by nand.sh.
+	# Export variables consumed by nand.sh.
 	#
+
 	export CI_KERNPART
 	export CI_UBIPART
 	export CI_ROOTPART
 
 
 	#
-	# Display final target.
+	# Display target.
 	#
+
 	echo "Board: $BOARD"
 	echo "Current boot_part: $boot_part"
 	echo
-	echo "CURRENT kernel partition:"
-	echo "  $CI_KERNPART"
+	echo "CURRENT kernel partition: $CI_KERNPART"
+	echo "CURRENT UBI partition:    $CI_UBIPART"
+	echo "CURRENT rootfs volume:    $CI_ROOTPART"
 	echo
-	echo "CURRENT UBI partition:"
-	echo "  $CI_UBIPART"
-	echo
-	echo "CURRENT rootfs volume:"
-	echo "  $CI_ROOTPART"
-	echo
-	echo "Firmware image:"
-	echo "  $IMAGE"
+	echo "Firmware image: $IMAGE"
 	echo
 
-	echo "========================================"
-	echo " WARNING"
-	echo "========================================"
-	echo
-	echo "The CURRENT firmware slot will be erased"
-	echo "and replaced by the new OpenWrt image."
+	echo "WARNING:"
+	echo "The CURRENT firmware slot will be replaced."
 	echo
 	echo "boot_part will NOT be changed."
 	echo
-	echo "The device will reboot after the upgrade."
-	echo
-	echo "========================================"
-	echo
 
-
-	#
-	# Synchronize filesystem writes before touching NAND.
-	#
 	sync
 
 
 	#
 	# IMPORTANT:
 	#
-	# Do NOT call:
+	# Do NOT call platform_do_upgrade().
 	#
-	#     platform_do_upgrade "$IMAGE"
+	# On EA6350v3 it invokes linksys.sh, which changes
+	# the target to the inactive slot.
 	#
-	# because linksys.sh would execute:
+	# nand_do_upgrade() operates using our explicit
+	# CI_KERNPART / CI_UBIPART / CI_ROOTPART values.
 	#
-	#     linksys_get_target_firmware()
-	#
-	# which deliberately selects the INACTIVE slot.
-	#
-	# Instead call nand_do_upgrade() directly with our
-	# explicitly selected CURRENT CI_* variables.
-	#
+
 	echo "Starting NAND upgrade of CURRENT slot..."
 	echo
-
 
 	nand_do_upgrade "$IMAGE"
 
 
 	#
-	# Normally nand_do_upgrade() does not return here:
+	# nand_do_upgrade() normally does not return because
+	# nand_do_upgrade_success() reboots the router.
 	#
-	#     nand_do_upgrade_success()
-	#         |
-	#         +-- restore configuration
-	#         +-- sync
-	#         +-- reboot
-	#
+
 	echo
 	echo "ERROR: nand_do_upgrade returned unexpectedly"
+
 	exit 1
 
 fi
@@ -227,15 +200,9 @@ fi
 
 #
 # ============================================================
-# NORMAL / INACTIVE-SLOT UPGRADE
+# NORMAL UPGRADE
 # ============================================================
 #
-# This is the normal OpenWrt behaviour.
-#
-# On EA6350v3 platform_do_upgrade() calls linksys.sh, which
-# selects the opposite firmware slot.
-#
-
 
 if type 'platform_do_upgrade' >/dev/null 2>/dev/null; then
 
@@ -249,8 +216,9 @@ fi
 
 
 #
-# Restore configuration if requested by normal sysupgrade.
+# Restore configuration for normal sysupgrade.
 #
+
 if [ -n "$UPGRADE_BACKUP" ] && \
 	type 'platform_copy_config' >/dev/null 2>/dev/null; then
 
@@ -262,7 +230,6 @@ fi
 v "Upgrade completed"
 
 sleep 1
-
 
 v "Rebooting system..."
 

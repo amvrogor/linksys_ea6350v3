@@ -57,17 +57,6 @@ define Package/ea6350-firmware-manager/install
 
 
 	#
-	# Custom sysupgrade stage2
-	#
-
-	$(INSTALL_DIR) $(1)/lib/upgrade
-
-	$(INSTALL_BIN) \
-		./files/lib/upgrade/do_stage2 \
-		$(1)/lib/upgrade/
-
-
-	#
 	# LuCI menu
 	#
 

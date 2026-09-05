@@ -99,6 +99,27 @@ jobs:
             "${REPO_URL}" \
             openwrt
 
+      - name: Patch OpenWrt sysupgrade stage2
+        run: |
+          echo "=== Replacing OpenWrt do_stage2 ==="
+
+          cp \
+            patches/openwrt/do_stage2 \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          chmod 0755 \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== Patched do_stage2 ==="
+          ls -l \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          grep -n \
+            'UPGRADE_OPT_USE_CURR_PART' \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2 || true
+
       - name: Show OpenWrt version
         run: |
           cd openwrt
