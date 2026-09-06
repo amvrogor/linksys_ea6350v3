@@ -17,12 +17,22 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # Checkout
+      # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # ============================================================
+      # System
+      # ============================================================
 
       - name: Set timezone
         run: |
           sudo timedatectl set-timezone "${TZ}"
+
 
       - name: Free disk space
         run: |
@@ -30,6 +40,11 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           docker system prune -af || true
+
+
+      # ============================================================
+      # Build dependencies
+      # ============================================================
 
       - name: Install dependencies
         env:
@@ -91,6 +106,11 @@ jobs:
             xxd \
             zlib1g-dev
 
+
+      # ============================================================
+      # OpenWrt source
+      # ============================================================
+
       - name: Clone OpenWrt
         run: |
           git clone \
@@ -99,9 +119,36 @@ jobs:
             "${REPO_URL}" \
             openwrt
 
+
+      # ============================================================
+      # Patch OpenWrt sysupgrade stage2
+      #
+      # IMPORTANT:
+      # do_stage2 belongs to base-files.
+      #
+      # We replace the source file BEFORE the OpenWrt build.
+      # The ea6350-firmware-manager package itself does NOT
+      # install /lib/upgrade/do_stage2.
+      # ============================================================
+
       - name: Patch OpenWrt sysupgrade stage2
         run: |
-          echo "=== Replacing OpenWrt do_stage2 ==="
+          echo "=== Checking custom do_stage2 patch ==="
+
+          test -f patches/openwrt/do_stage2
+
+          echo
+          echo "=== Source patch ==="
+          ls -l patches/openwrt/do_stage2
+
+          echo
+          echo "=== Current-slot handler ==="
+          grep -n \
+            'UPGRADE_OPT_USE_CURR_PART' \
+            patches/openwrt/do_stage2
+
+          echo
+          echo "=== Installing patched do_stage2 into OpenWrt ==="
 
           cp \
             patches/openwrt/do_stage2 \
@@ -111,48 +158,61 @@ jobs:
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== Patched do_stage2 ==="
+          echo "=== Installed do_stage2 ==="
           ls -l \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
+          echo "=== Installed current-slot handler ==="
           grep -n \
             'UPGRADE_OPT_USE_CURR_PART' \
-            openwrt/package/base-files/files/lib/upgrade/do_stage2 || true
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+
+      # ============================================================
+      # OpenWrt version
+      # ============================================================
 
       - name: Show OpenWrt version
         run: |
           cd openwrt
+
+          echo "=== OpenWrt branch ==="
           git branch --show-current
+
+          echo
+          echo "=== OpenWrt commit ==="
           git log -1 --oneline
+
+
+      # ============================================================
+      # Feeds
+      # ============================================================
 
       - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
 
+
       - name: Install feeds
         run: |
           cd openwrt
           ./scripts/feeds install -a
 
+
+      # ============================================================
+      # Home Edition packages
+      # ============================================================
+
       - name: Add Home Edition packages
         run: |
           cp -a packages/. openwrt/package/
 
-      - name: Check Firmware Manager files
-        run: |
-          echo "=== Firmware Manager source files ==="
-          find packages/ea6350-firmware-manager/files -type f -print
 
-          echo
-          echo "=== do_stage2 ==="
-          ls -l packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2
-
-          echo
-          echo "=== Makefile install section ==="
-          grep -A80 '^define Package/ea6350-firmware-manager/install' \
-            packages/ea6350-firmware-manager/Makefile
+      # ============================================================
+      # Add custom files
+      # ============================================================
 
       - name: Add custom files
         run: |
@@ -160,6 +220,47 @@ jobs:
             mkdir -p openwrt/files
             cp -a build/files/. openwrt/files/
           fi
+
+
+      # ============================================================
+      # Verify Firmware Manager package source
+      #
+      # There must NOT be:
+      #
+      #   packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2
+      #
+      # because do_stage2 is owned by base-files.
+      # ============================================================
+
+      - name: Check Firmware Manager source
+        run: |
+          echo "=== Firmware Manager source files ==="
+
+          find packages/ea6350-firmware-manager/files \
+            -type f \
+            -print
+
+          echo
+          echo "=== Checking that package does not contain do_stage2 ==="
+
+          if [ -e packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2 ]; then
+            echo "ERROR: do_stage2 must NOT be inside ea6350-firmware-manager package"
+            exit 1
+          fi
+
+          echo "[OK] Firmware Manager does not own do_stage2"
+
+          echo
+          echo "=== Firmware Manager Makefile install section ==="
+
+          grep -A100 \
+            '^define Package/ea6350-firmware-manager/install' \
+            packages/ea6350-firmware-manager/Makefile
+
+
+      # ============================================================
+      # Configuration
+      # ============================================================
 
       - name: Create configuration
         run: |
@@ -172,94 +273,166 @@ jobs:
           EOF
 
           while IFS= read -r package; do
+
             case "$package" in
               ""|\#*)
                 continue
                 ;;
             esac
 
-            package="$(printf '%s' "$package" | sed 's/[[:space:]]*#.*$//' | xargs)"
+            package="$(printf '%s' "$package" | \
+              sed 's/[[:space:]]*#.*$//' | xargs)"
 
             [ -z "$package" ] && continue
 
             printf 'CONFIG_PACKAGE_%s=y\n' "$package" >> .config
+
           done < ../build/packages.txt
 
           echo
           echo "=== Requested packages before defconfig ==="
+
           grep '^CONFIG_PACKAGE_' .config || true
+
+          echo
+          echo "=== First defconfig ==="
 
           make defconfig
 
           echo
           echo "=== Force Home Edition package ==="
+
           echo 'CONFIG_PACKAGE_ea6350-defaults=y' >> .config
+
+          echo
+          echo "=== Second defconfig ==="
 
           make defconfig
 
           echo
           echo "=== Final Home Edition package configuration ==="
-          grep 'CONFIG_PACKAGE_ea6350-defaults' .config || true
+
+          grep \
+            'CONFIG_PACKAGE_ea6350-defaults' \
+            .config || true
 
           echo
           echo "=== Firmware Manager package configuration ==="
-          grep 'CONFIG_PACKAGE_ea6350-firmware-manager' .config || true
+
+          grep \
+            'CONFIG_PACKAGE_ea6350-firmware-manager' \
+            .config || true
+
+
+      # ============================================================
+      # Check requested packages
+      # ============================================================
 
       - name: Check requested packages
         run: |
           cd openwrt
 
           echo "=== Home Edition package ==="
-          grep -E 'CONFIG_PACKAGE_ea6350-defaults' .config || true
-          echo
 
+          grep -E \
+            'CONFIG_PACKAGE_ea6350-defaults' \
+            .config || true
+
+          echo
           echo "=== Requested package status ==="
 
           while IFS= read -r package; do
+
             case "$package" in
               ""|\#*)
                 continue
                 ;;
             esac
 
-            package="$(printf '%s' "$package" | sed 's/[[:space:]]*#.*$//' | xargs)"
+            package="$(printf '%s' "$package" | \
+              sed 's/[[:space:]]*#.*$//' | xargs)"
 
             [ -z "$package" ] && continue
 
-            if grep -q "^CONFIG_PACKAGE_${package}=y$" .config; then
+            if grep -q \
+              "^CONFIG_PACKAGE_${package}=y$" \
+              .config; then
+
               echo "[OK] $package"
-            elif grep -q "^# CONFIG_PACKAGE_${package} is not set$" .config; then
+
+            elif grep -q \
+              "^# CONFIG_PACKAGE_${package} is not set$" \
+              .config; then
+
               echo "[NOT SELECTED] $package"
+
             else
+
               echo "[UNKNOWN] $package"
+
             fi
+
           done < ../build/packages.txt
+
+
+      # ============================================================
+      # Target configuration
+      # ============================================================
 
       - name: Show target configuration
         run: |
           cd openwrt
+
           echo "=== Target ==="
-          grep '^CONFIG_TARGET' .config || true
+
+          grep '^CONFIG_TARGET' \
+            .config || true
+
+
+      # ============================================================
+      # Download
+      # ============================================================
 
       - name: Download sources
         run: |
           cd openwrt
           make download -j$(nproc)
 
+
+      # ============================================================
+      # Build complete firmware
+      # ============================================================
+
       - name: Build firmware
         run: |
           cd openwrt
-          make -j$(nproc) || make -j1 V=s
+
+          make -j$(nproc) || \
+            make -j1 V=s
+
+
+      # ============================================================
+      # Build Firmware Manager separately
+      # ============================================================
 
       - name: Build firmware manager package separately
         run: |
           cd openwrt
-          make package/ea6350-firmware-manager/compile V=s
-      
+
+          make \
+            package/ea6350-firmware-manager/compile \
+            V=s
+
+
+      # ============================================================
+      # Verify Firmware Manager package
+      # ============================================================
+
       - name: Verify Firmware Manager package
         if: always()
         run: |
-          echo "=== Firmware Manager package ==="
+
+          echo "=== Firmware Manager package files ==="
 
           find openwrt/bin/packages \
             -type f \
@@ -291,20 +464,49 @@ jobs:
 
           done
 
+
+      # ============================================================
+      # Show firmware files
+      # ============================================================
+
       - name: Show firmware files
         if: always()
         run: |
+
           echo "=== Firmware output ==="
-          find openwrt/bin/targets/ipq40xx/generic -maxdepth 1 -type f -printf '%f\n' 2>/dev/null || true
+
+          find \
+            openwrt/bin/targets/ipq40xx/generic \
+            -maxdepth 1 \
+            -type f \
+            -printf '%f\n' \
+            2>/dev/null || true
+
+
+      # ============================================================
+      # Show Firmware Manager package
+      # ============================================================
 
       - name: Show firmware manager package
         if: always()
         run: |
+
           echo "=== Firmware Manager package output ==="
-          find openwrt/bin/packages -type f \
-            \( -name 'ea6350-firmware-manager*.apk' -o \
-               -name 'ea6350-firmware-manager*.ipk' \) \
-            -print 2>/dev/null || true
+
+          find openwrt/bin/packages \
+            -type f \
+            \( \
+              -name 'ea6350-firmware-manager*.apk' \
+              -o \
+              -name 'ea6350-firmware-manager*.ipk' \
+            \) \
+            -print \
+            2>/dev/null || true
+
+
+      # ============================================================
+      # Upload firmware
+      # ============================================================
 
       - name: Upload firmware
         if: success()
@@ -313,8 +515,16 @@ jobs:
           name: OpenWrt_EA6350v3_HomeEdition
           path: |
             openwrt/bin/targets/ipq40xx/generic/*
+
+
+      # ============================================================
+      # Locate Firmware Manager package
+      # ============================================================
+
       - name: Locate firmware manager package
+        if: always()
         run: |
+
           echo "=== Searching for firmware manager package ==="
 
           find openwrt/bin \
@@ -326,9 +536,17 @@ jobs:
             \) \
             -print
 
+
+      # ============================================================
+      # Prepare Firmware Manager artifact
+      # ============================================================
+
       - name: Prepare firmware manager artifact
+        if: always()
         run: |
+
           rm -rf artifact
+
           mkdir -p artifact
 
           find openwrt/bin \
@@ -342,17 +560,28 @@ jobs:
 
           echo
           echo "=== Artifact directory ==="
+
           ls -lah artifact
 
-          if ! find artifact -type f | grep -q .; then
+          if ! find artifact \
+            -type f \
+            | grep -q .; then
+
             echo "ERROR: ea6350-firmware-manager package was not found"
+
             exit 1
+
           fi
 
+
+      # ============================================================
+      # Upload Firmware Manager package
+      # ============================================================
+
       - name: Upload firmware manager package
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ea6350-firmware-manager-1.0.16
+          name: ea6350-firmware-manager-1.0.17
           path: artifact/*
           if-no-files-found: error
-      
