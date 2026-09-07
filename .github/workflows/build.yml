@@ -121,36 +121,38 @@ jobs:
 
 
       # ============================================================
-      # Patch OpenWrt sysupgrade stage2
-      #
-      # IMPORTANT:
-      # do_stage2 belongs to base-files.
-      #
-      # We replace the source file BEFORE the OpenWrt build.
-      # The ea6350-firmware-manager package itself does NOT
-      # install /lib/upgrade/do_stage2.
+      # Initial installation of custom do_stage2
       # ============================================================
 
-      - name: Patch OpenWrt sysupgrade stage2
+      - name: Install custom do_stage2
         run: |
-          echo "=== Checking custom do_stage2 patch ==="
+          set -e
+
+          echo "=== Checking source do_stage2 ==="
 
           test -f patches/openwrt/do_stage2
 
           echo
-          echo "=== Source patch ==="
+          echo "=== Source file ==="
+
           ls -l patches/openwrt/do_stage2
 
           echo
-          echo "=== Current-slot handler ==="
+          echo "=== Source file size ==="
+
+          wc -c patches/openwrt/do_stage2
+
+          echo
+          echo "=== Source current-slot handler ==="
+
           grep -n \
             'UPGRADE_OPT_USE_CURR_PART' \
             patches/openwrt/do_stage2
 
           echo
-          echo "=== Installing patched do_stage2 into OpenWrt ==="
+          echo "=== Installing into base-files ==="
 
-          cp \
+          cp -f \
             patches/openwrt/do_stage2 \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
@@ -158,15 +160,26 @@ jobs:
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== Installed do_stage2 ==="
+          echo "=== Installed file ==="
+
           ls -l \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
+          echo "=== Installed file size ==="
+
+          wc -c \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
           echo "=== Installed current-slot handler ==="
+
           grep -n \
             'UPGRADE_OPT_USE_CURR_PART' \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "[OK] Custom do_stage2 installed"
 
 
       # ============================================================
@@ -178,10 +191,12 @@ jobs:
           cd openwrt
 
           echo "=== OpenWrt branch ==="
+
           git branch --show-current
 
           echo
           echo "=== OpenWrt commit ==="
+
           git log -1 --oneline
 
 
@@ -224,16 +239,12 @@ jobs:
 
       # ============================================================
       # Verify Firmware Manager package source
-      #
-      # There must NOT be:
-      #
-      #   packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2
-      #
-      # because do_stage2 is owned by base-files.
       # ============================================================
 
       - name: Check Firmware Manager source
         run: |
+          set -e
+
           echo "=== Firmware Manager source files ==="
 
           find packages/ea6350-firmware-manager/files \
@@ -241,7 +252,7 @@ jobs:
             -print
 
           echo
-          echo "=== Checking that package does not contain do_stage2 ==="
+          echo "=== Checking that package does NOT contain do_stage2 ==="
 
           if [ -e packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2 ]; then
             echo "ERROR: do_stage2 must NOT be inside ea6350-firmware-manager package"
@@ -376,7 +387,53 @@ jobs:
 
 
       # ============================================================
-      # Target configuration
+      # FINALIZE custom do_stage2
+      #
+      # This is intentionally AFTER defconfig and BEFORE download/build.
+      # It guarantees that the source tree contains our version at the
+      # final moment before OpenWrt starts generating packages.
+      # ============================================================
+
+      - name: Finalize custom do_stage2
+        run: |
+          set -e
+
+          echo "=== FINAL do_stage2 installation ==="
+
+          test -f patches/openwrt/do_stage2
+
+          cp -f \
+            patches/openwrt/do_stage2 \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          chmod 0755 \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== FINAL do_stage2 ==="
+
+          ls -l \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== FINAL do_stage2 size ==="
+
+          wc -c \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== FINAL do_stage2 current-slot handler ==="
+
+          grep -n \
+            'UPGRADE_OPT_USE_CURR_PART' \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "[OK] Custom do_stage2 is present immediately before build"
+
+
+      # ============================================================
+      # Verify target configuration
       # ============================================================
 
       - name: Show target configuration
@@ -409,6 +466,162 @@ jobs:
 
           make -j$(nproc) || \
             make -j1 V=s
+
+
+      # ============================================================
+      # Verify source tree after build
+      # ============================================================
+
+      - name: Verify source do_stage2 after build
+        if: always()
+        run: |
+          set -e
+
+          echo "=== Source tree do_stage2 after build ==="
+
+          ls -l \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== Size ==="
+
+          wc -c \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "=== Current-slot handler ==="
+
+          grep -n \
+            'UPGRADE_OPT_USE_CURR_PART' \
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+
+          echo
+          echo "[OK] Source tree still contains custom do_stage2"
+
+
+      # ============================================================
+      # Verify base-files package
+      #
+      # This is the critical test.
+      #
+      # We inspect the ACTUAL base-files package generated by OpenWrt,
+      # not just the source tree.
+      # ============================================================
+
+      - name: Verify custom do_stage2 in base-files
+        if: always()
+        run: |
+          set -e
+
+          echo "=== Searching base-files packages ==="
+
+          find openwrt/bin \
+            -type f \
+            \( \
+              -name 'base-files*.apk' \
+              -o \
+              -name 'base-files*.ipk' \
+            \) \
+            -print
+
+          echo
+          echo "=== Checking do_stage2 inside base-files ==="
+
+          found=0
+
+          while IFS= read -r pkg; do
+
+            echo
+            echo "========================================"
+            echo "PACKAGE: $pkg"
+            echo "========================================"
+
+            if ! tar tf "$pkg" | \
+              grep -q '^./lib/upgrade/do_stage2$' && \
+               ! tar tf "$pkg" | \
+              grep -q '^lib/upgrade/do_stage2$'; then
+
+              echo "[WARNING] do_stage2 not found in package"
+
+              continue
+
+            fi
+
+            echo "[OK] do_stage2 exists in package"
+
+            tmpdir="$(mktemp -d)"
+
+            if tar tf "$pkg" | \
+              grep -q '^./lib/upgrade/do_stage2$'; then
+
+              tar xf "$pkg" \
+                -C "$tmpdir" \
+                ./lib/upgrade/do_stage2
+
+            else
+
+              tar xf "$pkg" \
+                -C "$tmpdir" \
+                lib/upgrade/do_stage2
+
+            fi
+
+            echo
+            echo "=== Extracted do_stage2 ==="
+
+            ls -l \
+              "$tmpdir/lib/upgrade/do_stage2"
+
+            echo
+            echo "=== Extracted file size ==="
+
+            wc -c \
+              "$tmpdir/lib/upgrade/do_stage2"
+
+            echo
+            echo "=== Checking custom handler ==="
+
+            grep -n \
+              'UPGRADE_OPT_USE_CURR_PART' \
+              "$tmpdir/lib/upgrade/do_stage2"
+
+            echo
+            echo "[OK] CUSTOM do_stage2 IS INSIDE BASE-FILES"
+
+            found=1
+
+            rm -rf "$tmpdir"
+
+          done < <(
+            find openwrt/bin \
+              -type f \
+              \( \
+                -name 'base-files*.apk' \
+                -o \
+                -name 'base-files*.ipk' \
+              \)
+          )
+
+          echo
+
+          if [ "$found" -ne 1 ]; then
+
+            echo "========================================"
+            echo "ERROR"
+            echo "========================================"
+            echo
+            echo "Custom do_stage2 was NOT found inside"
+            echo "the generated base-files package."
+            echo
+            echo "The firmware MUST NOT be considered valid."
+            echo
+
+            exit 1
+
+          fi
+
+          echo
+          echo "[OK] base-files contains custom do_stage2"
 
 
       # ============================================================
@@ -582,6 +795,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ea6350-firmware-manager-1.0.17
+          name: ea6350-firmware-manager-1.0.18
           path: artifact/*
           if-no-files-found: error
