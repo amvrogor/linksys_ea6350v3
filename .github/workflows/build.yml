@@ -1,15 +1,7 @@
-name: Build OpenWrt EA6350v3
+name: Build Linksys EA6350v3 OpenWrt
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-env:
-  REPO_URL: https://github.com/openwrt/openwrt.git
-  REPO_BRANCH: openwrt-25.12
-  TZ: Europe/Kyiv
 
 jobs:
   build:
@@ -18,7 +10,7 @@ jobs:
     steps:
 
       # ============================================================
-      # Checkout
+      # CHECKOUT
       # ============================================================
 
       - name: Checkout repository
@@ -26,133 +18,62 @@ jobs:
 
 
       # ============================================================
-      # System
+      # DEPENDENCIES
       # ============================================================
 
-      - name: Set timezone
-        run: |
-          sudo timedatectl set-timezone "${TZ}"
-
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          docker system prune -af || true
-
-
-      # ============================================================
-      # Build dependencies
-      # ============================================================
-
-      - name: Install dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      - name: Install build dependencies
         run: |
           sudo apt-get update
 
           sudo apt-get install -y \
-            ack \
-            asciidoc \
-            autoconf \
-            automake \
-            autopoint \
-            binutils \
-            bison \
             build-essential \
-            bzip2 \
-            ccache \
-            cmake \
-            cpio \
-            curl \
-            device-tree-compiler \
+            clang \
             flex \
+            bison \
+            g++ \
             gawk \
             gettext \
             git \
-            gperf \
-            intltool \
-            libelf-dev \
-            libglib2.0-dev \
-            libgmp3-dev \
-            libltdl-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libncurses-dev \
-            libpython3-dev \
-            libreadline-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
             libssl-dev \
-            libtool \
-            lz4 \
-            msmtp \
-            ninja-build \
-            p7zip-full \
-            patch \
-            pkgconf \
             python3 \
-            python3-pyelftools \
+            python3-distutils \
             python3-setuptools \
-            qemu-utils \
             rsync \
-            squashfs-tools \
-            subversion \
-            swig \
-            texinfo \
-            uglifyjs \
             unzip \
-            vim \
             wget \
-            xxd \
-            zlib1g-dev
+            xsltproc \
+            zlib1g-dev \
+            file \
+            p7zip-full \
+            jq
 
 
       # ============================================================
-      # OpenWrt source
+      # CLONE OPENWRT
       # ============================================================
 
       - name: Clone OpenWrt
         run: |
-          git clone \
-            --single-branch \
-            --branch "${REPO_BRANCH}" \
-            "${REPO_URL}" \
+          git clone --depth 1 \
+            --branch openwrt-25.12 \
+            https://github.com/openwrt/openwrt.git \
             openwrt
 
 
       # ============================================================
-      # Initial installation of custom do_stage2
+      # COPY CUSTOM DO_STAGE2
       # ============================================================
 
-      - name: Install custom do_stage2
+      - name: Install custom do_stage2 into base-files
         run: |
           set -e
 
-          echo "=== Checking source do_stage2 ==="
+          mkdir -p \
+            openwrt/package/base-files/files/lib/upgrade
 
-          test -f patches/openwrt/do_stage2
-
-          echo
-          echo "=== Source file ==="
-
-          ls -l patches/openwrt/do_stage2
-
-          echo
-          echo "=== Source file size ==="
-
-          wc -c patches/openwrt/do_stage2
-
-          echo
-          echo "=== Source current-slot handler ==="
-
-          grep -n \
-            'UPGRADE_OPT_USE_CURR_PART' \
-            patches/openwrt/do_stage2
-
-          echo
-          echo "=== Installing into base-files ==="
-
-          cp -f \
+          cp \
             patches/openwrt/do_stage2 \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
@@ -160,249 +81,179 @@ jobs:
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== Installed file ==="
-
+          echo "Custom do_stage2 installed:"
           ls -l \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== Installed file size ==="
-
           wc -c \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== Installed current-slot handler ==="
-
           grep -n \
-            'UPGRADE_OPT_USE_CURR_PART' \
+            "UPGRADE_OPT_USE_CURR_PART" \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
-          echo
-          echo "[OK] Custom do_stage2 installed"
-
 
       # ============================================================
-      # OpenWrt version
-      # ============================================================
-
-      - name: Show OpenWrt version
-        run: |
-          cd openwrt
-
-          echo "=== OpenWrt branch ==="
-
-          git branch --show-current
-
-          echo
-          echo "=== OpenWrt commit ==="
-
-          git log -1 --oneline
-
-
-      # ============================================================
-      # Feeds
+      # FEEDS
       # ============================================================
 
       - name: Update feeds
+        working-directory: openwrt
         run: |
-          cd openwrt
           ./scripts/feeds update -a
 
 
       - name: Install feeds
+        working-directory: openwrt
         run: |
-          cd openwrt
           ./scripts/feeds install -a
 
 
       # ============================================================
-      # Home Edition packages
+      # COPY CUSTOM PACKAGES
       # ============================================================
 
-      - name: Add Home Edition packages
-        run: |
-          cp -a packages/. openwrt/package/
-
-
-      # ============================================================
-      # Add custom files
-      # ============================================================
-
-      - name: Add custom files
-        run: |
-          if [ -d build/files ]; then
-            mkdir -p openwrt/files
-            cp -a build/files/. openwrt/files/
-          fi
-
-
-      # ============================================================
-      # Verify Firmware Manager package source
-      # ============================================================
-
-      - name: Check Firmware Manager source
+      - name: Copy custom packages
         run: |
           set -e
 
-          echo "=== Firmware Manager source files ==="
-
-          find packages/ea6350-firmware-manager/files \
-            -type f \
-            -print
+          cp -a \
+            packages/. \
+            openwrt/package/
 
           echo
-          echo "=== Checking that package does NOT contain do_stage2 ==="
+          echo "Custom packages:"
+          find openwrt/package \
+            -maxdepth 2 \
+            -type f \
+            -name Makefile \
+            | grep -E \
+              "ea6350|homeusb" \
+            | sort
 
-          if [ -e packages/ea6350-firmware-manager/files/lib/upgrade/do_stage2 ]; then
-            echo "ERROR: do_stage2 must NOT be inside ea6350-firmware-manager package"
+
+      # ============================================================
+      # CHECK PACKAGE SOURCES
+      # ============================================================
+
+      - name: Check custom package sources
+        run: |
+          set -e
+
+          echo
+          echo "=== ea6350-defaults ==="
+          find packages/ea6350-defaults -type f | sort
+
+          echo
+          echo "=== ea6350-firmware-manager ==="
+          find packages/ea6350-firmware-manager -type f | sort
+
+          echo
+          echo "=== homeusb ==="
+          find packages/homeusb -type f | sort
+
+          echo
+          echo "=== Verify no package-owned do_stage2 ==="
+          if find packages/ea6350-firmware-manager \
+              -path "*/lib/upgrade/do_stage2" \
+              -print \
+              | grep -q .; then
+
+            echo "ERROR: do_stage2 must NOT belong to firmware-manager package"
             exit 1
           fi
 
-          echo "[OK] Firmware Manager does not own do_stage2"
-
-          echo
-          echo "=== Firmware Manager Makefile install section ==="
-
-          grep -A100 \
-            '^define Package/ea6350-firmware-manager/install' \
-            packages/ea6350-firmware-manager/Makefile
+          echo "[OK] firmware-manager does not contain do_stage2"
 
 
       # ============================================================
-      # Configuration
+      # CONFIG
       # ============================================================
 
-      - name: Create configuration
+      - name: Configure OpenWrt
         run: |
+          set -e
+
           cd openwrt
-
-          cat > .config <<'EOF'
-          CONFIG_TARGET_ipq40xx=y
-          CONFIG_TARGET_ipq40xx_generic=y
-          CONFIG_TARGET_ipq40xx_generic_DEVICE_linksys_ea6350v3=y
-          EOF
-
-          while IFS= read -r package; do
-
-            case "$package" in
-              ""|\#*)
-                continue
-                ;;
-            esac
-
-            package="$(printf '%s' "$package" | \
-              sed 's/[[:space:]]*#.*$//' | xargs)"
-
-            [ -z "$package" ] && continue
-
-            printf 'CONFIG_PACKAGE_%s=y\n' "$package" >> .config
-
-          done < ../build/packages.txt
-
-          echo
-          echo "=== Requested packages before defconfig ==="
-
-          grep '^CONFIG_PACKAGE_' .config || true
-
-          echo
-          echo "=== First defconfig ==="
 
           make defconfig
 
-          echo
-          echo "=== Force Home Edition package ==="
+          ./scripts/config \
+            -e CONFIG_TARGET_ipq40xx \
+            -e CONFIG_TARGET_ipq40xx_generic \
+            -e CONFIG_TARGET_ipq40xx_generic_DEVICE_linksys_ea6350v3 \
+            -e CONFIG_PACKAGE_ea6350-defaults \
+            -e CONFIG_PACKAGE_ea6350-firmware-manager
 
-          echo 'CONFIG_PACKAGE_ea6350-defaults=y' >> .config
+          echo
+          echo "=== Target configuration ==="
+
+          ./scripts/config \
+            -s CONFIG_TARGET_ipq40xx
+
+          ./scripts/config \
+            -s CONFIG_TARGET_ipq40xx_generic
+
+          ./scripts/config \
+            -s CONFIG_TARGET_ipq40xx_generic_DEVICE_linksys_ea6350v3
 
           echo
-          echo "=== Second defconfig ==="
+          echo "=== Custom packages ==="
+
+          ./scripts/config \
+            -s CONFIG_PACKAGE_ea6350-defaults
+
+          ./scripts/config \
+            -s CONFIG_PACKAGE_ea6350-firmware-manager
 
           make defconfig
 
-          echo
-          echo "=== Final Home Edition package configuration ==="
-
-          grep \
-            'CONFIG_PACKAGE_ea6350-defaults' \
-            .config || true
-
-          echo
-          echo "=== Firmware Manager package configuration ==="
-
-          grep \
-            'CONFIG_PACKAGE_ea6350-firmware-manager' \
-            .config || true
-
 
       # ============================================================
-      # Check requested packages
+      # SHOW PACKAGE LIST
       # ============================================================
 
-      - name: Check requested packages
+      - name: Show requested packages
         run: |
-          cd openwrt
-
-          echo "=== Home Edition package ==="
-
-          grep -E \
-            'CONFIG_PACKAGE_ea6350-defaults' \
-            .config || true
-
           echo
-          echo "=== Requested package status ==="
-
-          while IFS= read -r package; do
-
-            case "$package" in
-              ""|\#*)
-                continue
-                ;;
-            esac
-
-            package="$(printf '%s' "$package" | \
-              sed 's/[[:space:]]*#.*$//' | xargs)"
-
-            [ -z "$package" ] && continue
-
-            if grep -q \
-              "^CONFIG_PACKAGE_${package}=y$" \
-              .config; then
-
-              echo "[OK] $package"
-
-            elif grep -q \
-              "^# CONFIG_PACKAGE_${package} is not set$" \
-              .config; then
-
-              echo "[NOT SELECTED] $package"
-
-            else
-
-              echo "[UNKNOWN] $package"
-
-            fi
-
-          done < ../build/packages.txt
+          echo "=== build/packages.txt ==="
+          cat build/packages.txt
 
 
       # ============================================================
-      # FINALIZE custom do_stage2
+      # COPY CUSTOM FILES
+      # ============================================================
+
+      - name: Copy custom files
+        run: |
+          set -e
+
+          if [ -d build/files ]; then
+            cp -a \
+              build/files/. \
+              openwrt/files/
+          fi
+
+          echo
+          echo "Custom files copied."
+
+
+      # ============================================================
+      # FINALIZE DO_STAGE2
       #
-      # This is intentionally AFTER defconfig and BEFORE download/build.
-      # It guarantees that the source tree contains our version at the
-      # final moment before OpenWrt starts generating packages.
+      # This is deliberately done immediately before build.
       # ============================================================
 
       - name: Finalize custom do_stage2
         run: |
           set -e
 
-          echo "=== FINAL do_stage2 installation ==="
+          mkdir -p \
+            openwrt/package/base-files/files/lib/upgrade
 
-          test -f patches/openwrt/do_stage2
-
-          cp -f \
+          cp \
             patches/openwrt/do_stage2 \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
@@ -410,22 +261,20 @@ jobs:
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== FINAL do_stage2 ==="
+          echo "=== Final do_stage2 source ==="
 
           ls -l \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== FINAL do_stage2 size ==="
-
           wc -c \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
-          echo "=== FINAL do_stage2 current-slot handler ==="
+          echo "=== Required marker ==="
 
           grep -n \
-            'UPGRADE_OPT_USE_CURR_PART' \
+            "UPGRADE_OPT_USE_CURR_PART" \
             openwrt/package/base-files/files/lib/upgrade/do_stage2
 
           echo
@@ -433,368 +282,235 @@ jobs:
 
 
       # ============================================================
-      # Verify target configuration
-      # ============================================================
-
-      - name: Show target configuration
-        run: |
-          cd openwrt
-
-          echo "=== Target ==="
-
-          grep '^CONFIG_TARGET' \
-            .config || true
-
-
-      # ============================================================
-      # Download
+      # BUILD
       # ============================================================
 
       - name: Download sources
+        working-directory: openwrt
         run: |
-          cd openwrt
           make download -j$(nproc)
 
 
-      # ============================================================
-      # Build complete firmware
-      # ============================================================
-
-      - name: Build firmware
+      - name: Build OpenWrt
+        working-directory: openwrt
         run: |
-          cd openwrt
-
-          make -j$(nproc) || \
-            make -j1 V=s
+          make -j$(nproc)
 
 
       # ============================================================
-      # Verify source tree after build
+      # VERIFY SOURCE TREE AFTER BUILD
       # ============================================================
 
-      - name: Verify source do_stage2 after build
-        if: always()
+      - name: Verify custom do_stage2 source
         run: |
           set -e
 
-          echo "=== Source tree do_stage2 after build ==="
-
-          ls -l \
-            openwrt/package/base-files/files/lib/upgrade/do_stage2
+          FILE="openwrt/package/base-files/files/lib/upgrade/do_stage2"
 
           echo
-          echo "=== Size ==="
+          echo "=== do_stage2 after build ==="
 
-          wc -c \
-            openwrt/package/base-files/files/lib/upgrade/do_stage2
+          test -f "$FILE"
+
+          ls -l "$FILE"
 
           echo
-          echo "=== Current-slot handler ==="
+          wc -c "$FILE"
 
+          echo
           grep -n \
-            'UPGRADE_OPT_USE_CURR_PART' \
-            openwrt/package/base-files/files/lib/upgrade/do_stage2
+            "UPGRADE_OPT_USE_CURR_PART" \
+            "$FILE"
 
           echo
-          echo "[OK] Source tree still contains custom do_stage2"
+          echo "[OK] Source tree contains custom do_stage2"
 
 
       # ============================================================
-      # Verify base-files package
-      #
-      # This is the critical test.
-      #
-      # We inspect the ACTUAL base-files package generated by OpenWrt,
-      # not just the source tree.
+      # FIND BASE-FILES APK
       # ============================================================
 
-      - name: Verify custom do_stage2 in base-files
-        if: always()
+      - name: Find base-files APK
+        id: find_basefiles
         run: |
           set -e
 
-          echo "=== Searching base-files packages ==="
-
-          find openwrt/bin \
+          PKG="$(find openwrt/bin/targets \
             -type f \
-            \( \
-              -name 'base-files*.apk' \
-              -o \
-              -name 'base-files*.ipk' \
-            \) \
-            -print
+            -name 'base-files-*.apk' \
+            | head -n1)"
+
+          test -n "$PKG"
+          test -f "$PKG"
+
+          echo "Base-files package:"
+          echo "$PKG"
+
+          echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
+
+
+      # ============================================================
+      # VERIFY APK MANIFEST
+      #
+      # IMPORTANT:
+      # .apk is NOT a normal tar archive.
+      # Use OpenWrt host apk tooling.
+      # ============================================================
+
+      - name: Verify do_stage2 in base-files APK
+        run: |
+          set -e
+
+          PKG="${{ steps.find_basefiles.outputs.pkg }}"
 
           echo
-          echo "=== Checking do_stage2 inside base-files ==="
-
-          found=0
-
-          while IFS= read -r pkg; do
-
-            echo
-            echo "========================================"
-            echo "PACKAGE: $pkg"
-            echo "========================================"
-
-            if ! tar tf "$pkg" | \
-              grep -q '^./lib/upgrade/do_stage2$' && \
-               ! tar tf "$pkg" | \
-              grep -q '^lib/upgrade/do_stage2$'; then
-
-              echo "[WARNING] do_stage2 not found in package"
-
-              continue
-
-            fi
-
-            echo "[OK] do_stage2 exists in package"
-
-            tmpdir="$(mktemp -d)"
-
-            if tar tf "$pkg" | \
-              grep -q '^./lib/upgrade/do_stage2$'; then
-
-              tar xf "$pkg" \
-                -C "$tmpdir" \
-                ./lib/upgrade/do_stage2
-
-            else
-
-              tar xf "$pkg" \
-                -C "$tmpdir" \
-                lib/upgrade/do_stage2
-
-            fi
-
-            echo
-            echo "=== Extracted do_stage2 ==="
-
-            ls -l \
-              "$tmpdir/lib/upgrade/do_stage2"
-
-            echo
-            echo "=== Extracted file size ==="
-
-            wc -c \
-              "$tmpdir/lib/upgrade/do_stage2"
-
-            echo
-            echo "=== Checking custom handler ==="
-
-            grep -n \
-              'UPGRADE_OPT_USE_CURR_PART' \
-              "$tmpdir/lib/upgrade/do_stage2"
-
-            echo
-            echo "[OK] CUSTOM do_stage2 IS INSIDE BASE-FILES"
-
-            found=1
-
-            rm -rf "$tmpdir"
-
-          done < <(
-            find openwrt/bin \
-              -type f \
-              \( \
-                -name 'base-files*.apk' \
-                -o \
-                -name 'base-files*.ipk' \
-              \)
-          )
+          echo "=== Package ==="
+          echo "$PKG"
 
           echo
+          echo "=== Locate apk tool ==="
 
-          if [ "$found" -ne 1 ]; then
+          APK="openwrt/staging_dir/host/bin/apk"
 
-            echo "========================================"
-            echo "ERROR"
-            echo "========================================"
-            echo
-            echo "Custom do_stage2 was NOT found inside"
-            echo "the generated base-files package."
-            echo
-            echo "The firmware MUST NOT be considered valid."
-            echo
-
+          if [ ! -x "$APK" ]; then
+            echo "ERROR: OpenWrt host apk tool not found:"
+            echo "$APK"
             exit 1
+          fi
 
+          "$APK" --version || true
+
+          echo
+          echo "=== APK manifest ==="
+
+          "$APK" manifest "$PKG" \
+            | grep -E \
+              '(^|/)lib/upgrade/do_stage2$'
+
+          echo
+          echo "[OK] do_stage2 is present in base-files APK manifest"
+
+
+      # ============================================================
+      # BUILD FIRMWARE MANAGER PACKAGE
+      # ============================================================
+
+      - name: Build firmware manager package
+        working-directory: openwrt
+        run: |
+          make package/ea6350-firmware-manager/compile V=s
+
+
+      # ============================================================
+      # VERIFY FIRMWARE MANAGER APK
+      # ============================================================
+
+      - name: Verify firmware manager package
+        run: |
+          set -e
+
+          APK="openwrt/staging_dir/host/bin/apk"
+
+          PKG="$(find openwrt/bin/packages \
+            -type f \
+            -name 'ea6350-firmware-manager-*.apk' \
+            | head -n1)"
+
+          test -n "$PKG"
+          test -f "$PKG"
+
+          echo
+          echo "Firmware manager package:"
+          echo "$PKG"
+
+          echo
+          echo "=== Manifest ==="
+
+          "$APK" manifest "$PKG"
+
+          echo
+          echo "=== Check forbidden do_stage2 ==="
+
+          if "$APK" manifest "$PKG" \
+              | grep -E \
+                '(^|/)lib/upgrade/do_stage2$'; then
+
+            echo
+            echo "ERROR: firmware-manager package contains do_stage2"
+            exit 1
           fi
 
           echo
-          echo "[OK] base-files contains custom do_stage2"
+          echo "[OK] firmware-manager package does not contain do_stage2"
 
 
       # ============================================================
-      # Build Firmware Manager separately
-      # ============================================================
-
-      - name: Build firmware manager package separately
-        run: |
-          cd openwrt
-
-          make \
-            package/ea6350-firmware-manager/compile \
-            V=s
-
-
-      # ============================================================
-      # Verify Firmware Manager package
-      # ============================================================
-
-      - name: Verify Firmware Manager package
-        if: always()
-        run: |
-
-          echo "=== Firmware Manager package files ==="
-
-          find openwrt/bin/packages \
-            -type f \
-            \( \
-              -name 'ea6350-firmware-manager*.apk' \
-              -o \
-              -name 'ea6350-firmware-manager*.ipk' \
-            \) \
-            -print
-
-          echo
-          echo "=== Package contents ==="
-
-          for pkg in $(find openwrt/bin/packages \
-            -type f \
-            \( \
-              -name 'ea6350-firmware-manager*.apk' \
-              -o \
-              -name 'ea6350-firmware-manager*.ipk' \
-            \)); do
-
-            echo
-            echo ">>> $pkg"
-
-            tar tf "$pkg" 2>/dev/null | \
-              grep -E \
-              '(^|/)(do_stage2|ea6350-firmware-manager[^/]*)($|/)' \
-              || true
-
-          done
-
-
-      # ============================================================
-      # Show firmware files
+      # SHOW FIRMWARE OUTPUT
       # ============================================================
 
       - name: Show firmware files
-        if: always()
         run: |
+          echo
+          echo "=== Firmware ==="
 
-          echo "=== Firmware output ==="
-
-          find \
-            openwrt/bin/targets/ipq40xx/generic \
-            -maxdepth 1 \
+          find openwrt/bin/targets \
             -type f \
-            -printf '%f\n' \
-            2>/dev/null || true
+            | sort
 
 
       # ============================================================
-      # Show Firmware Manager package
+      # SHOW PACKAGE OUTPUT
       # ============================================================
 
-      - name: Show firmware manager package
-        if: always()
+      - name: Show package files
         run: |
-
-          echo "=== Firmware Manager package output ==="
+          echo
+          echo "=== Packages ==="
 
           find openwrt/bin/packages \
             -type f \
-            \( \
-              -name 'ea6350-firmware-manager*.apk' \
-              -o \
-              -name 'ea6350-firmware-manager*.ipk' \
-            \) \
-            -print \
-            2>/dev/null || true
+            -name '*.apk' \
+            | sort
 
 
       # ============================================================
-      # Upload firmware
+      # ARTIFACTS
       # ============================================================
 
-      - name: Upload firmware
-        if: success()
+      - name: Collect firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_EA6350v3_HomeEdition
+          name: linksys-ea6350v3-firmware
           path: |
-            openwrt/bin/targets/ipq40xx/generic/*
+            openwrt/bin/targets/ipq40xx/generic/*.bin
+            openwrt/bin/targets/ipq40xx/generic/*.img
+            openwrt/bin/targets/ipq40xx/generic/*.tar
+            openwrt/bin/targets/ipq40xx/generic/*.manifest
+            openwrt/bin/targets/ipq40xx/generic/*.json
+          if-no-files-found: warn
 
 
-      # ============================================================
-      # Locate Firmware Manager package
-      # ============================================================
-
-      - name: Locate firmware manager package
-        if: always()
-        run: |
-
-          echo "=== Searching for firmware manager package ==="
-
-          find openwrt/bin \
-            -type f \
-            \( \
-              -name 'ea6350-firmware-manager*.apk' \
-              -o \
-              -name 'ea6350-firmware-manager*.ipk' \
-            \) \
-            -print
-
-
-      # ============================================================
-      # Prepare Firmware Manager artifact
-      # ============================================================
-
-      - name: Prepare firmware manager artifact
-        if: always()
-        run: |
-
-          rm -rf artifact
-
-          mkdir -p artifact
-
-          find openwrt/bin \
-            -type f \
-            \( \
-              -name 'ea6350-firmware-manager*.apk' \
-              -o \
-              -name 'ea6350-firmware-manager*.ipk' \
-            \) \
-            -exec cp -v {} artifact/ \;
-
-          echo
-          echo "=== Artifact directory ==="
-
-          ls -lah artifact
-
-          if ! find artifact \
-            -type f \
-            | grep -q .; then
-
-            echo "ERROR: ea6350-firmware-manager package was not found"
-
-            exit 1
-
-          fi
-
-
-      # ============================================================
-      # Upload Firmware Manager package
-      # ============================================================
-
-      - name: Upload firmware manager package
-        if: success()
+      - name: Collect package artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ea6350-firmware-manager-1.0.18
-          path: artifact/*
-          if-no-files-found: error
+          name: linksys-ea6350v3-packages
+          path: |
+            openwrt/bin/packages/**/*.apk
+          if-no-files-found: warn
+
+
+      # ============================================================
+      # COLLECT BUILD INFO
+      # ============================================================
+
+      - name: Collect build information
+        uses: actions/upload-artifact@v4
+        with:
+          name: linksys-ea6350v3-build-info
+          path: |
+            openwrt/.config
+            openwrt/package/base-files/files/lib/upgrade/do_stage2
+            build/packages.txt
+            packages/ea6350-firmware-manager/Makefile
+            patches/openwrt/do_stage2
+          if-no-files-found: warn
