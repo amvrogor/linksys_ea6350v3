@@ -496,6 +496,7 @@ jobs:
           echo "=== Extracting package ==="
 
           "$APK" extract \
+            --allow-untrusted \
             --no-chown \
             --destination "$DEST" \
             "$PKG"
@@ -513,6 +514,7 @@ jobs:
 
             echo
             echo "Package contents:"
+
             find "$DEST" \
               -type f \
               | grep -E \
@@ -521,6 +523,7 @@ jobs:
               || true
 
             exit 1
+
           fi
 
           echo
@@ -533,6 +536,7 @@ jobs:
 
           echo
           echo "Size:"
+
           wc -c "$FILE"
 
           echo
