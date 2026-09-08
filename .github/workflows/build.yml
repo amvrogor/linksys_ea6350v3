@@ -469,6 +469,8 @@ jobs:
 
           APK="openwrt/staging_dir/host/bin/apk"
 
+          DEST="$(mktemp -d)"
+
           echo
           echo "========================================"
           echo " BASE-FILES APK VERIFICATION"
@@ -483,37 +485,67 @@ jobs:
           echo "$APK"
 
           test -x "$APK"
+          test -f "$PKG"
 
           echo
           echo "APK version:"
 
-          "$APK" --version || true
+          "$APK" --version
 
           echo
-          echo "=== APK manifest ==="
+          echo "=== Extracting package ==="
 
-          "$APK" manifest "$PKG" \
-            | tee /tmp/base-files-manifest
+          "$APK" extract \
+            --no-chown \
+            --destination "$DEST" \
+            "$PKG"
 
           echo
-          echo "=== Check do_stage2 ==="
+          echo "=== Checking do_stage2 ==="
 
-          if grep -E \
-              '(^|/)lib/upgrade/do_stage2$' \
-              /tmp/base-files-manifest; then
+          FILE="$DEST/lib/upgrade/do_stage2"
 
-            echo
-            echo "[OK] do_stage2 is present in base-files APK"
-
-          else
+          if [ ! -f "$FILE" ]; then
 
             echo
             echo "ERROR:"
-            echo "do_stage2 was NOT found in base-files APK manifest"
+            echo "do_stage2 was NOT found inside base-files APK"
+
+            echo
+            echo "Package contents:"
+            find "$DEST" \
+              -type f \
+              | grep -E \
+                '(^|/)lib/upgrade/' \
+              | sort \
+              || true
 
             exit 1
-
           fi
+
+          echo
+          echo "[OK] do_stage2 exists in base-files APK"
+
+          echo
+          echo "=== Extracted file ==="
+
+          ls -l "$FILE"
+
+          echo
+          echo "Size:"
+          wc -c "$FILE"
+
+          echo
+          echo "=== Required marker ==="
+
+          grep -n \
+            "UPGRADE_OPT_USE_CURR_PART" \
+            "$FILE"
+
+          echo
+          echo "[OK] Custom do_stage2 is really inside base-files APK"
+
+          rm -rf "$DEST"
 
 
       # ============================================================
