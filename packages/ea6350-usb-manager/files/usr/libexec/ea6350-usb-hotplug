@@ -1,0 +1,70 @@
+#!/bin/sh
+
+MOUNT_POINT="/mnt/sda"
+STATE_FILE="/tmp/ea6350-usb-services"
+
+SERVICES="samba4 vsftpd minidlna"
+
+log()
+{
+	logger -t ea6350-usb-manager "$*"
+}
+
+case "$1" in
+
+	add)
+
+		sleep 2
+
+		if ! mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
+			log "HDD is not mounted at $MOUNT_POINT"
+			exit 0
+		fi
+
+		#
+		# If we know which services were running before
+		# removal, restore exactly those services.
+		#
+
+		if [ -s "$STATE_FILE" ]; then
+
+			while IFS= read -r service; do
+
+				[ -n "$service" ] || continue
+
+				if [ -x "/etc/init.d/$service" ]; then
+					log "Starting $service"
+					/etc/init.d/"$service" start >/dev/null 2>&1 || \
+						log "WARNING: failed to start $service"
+				fi
+
+			done < "$STATE_FILE"
+
+			rm -f "$STATE_FILE"
+
+		else
+
+			#
+			# After a router reboot there is no state file.
+			# Start services that are enabled in UCI/init.
+			#
+
+			for service in $SERVICES; do
+
+				if [ -x "/etc/init.d/$service" ] && \
+				   /etc/init.d/"$service" enabled >/dev/null 2>&1; then
+
+					log "Starting enabled service $service"
+					/etc/init.d/"$service" start >/dev/null 2>&1 || true
+
+				fi
+
+			done
+
+		fi
+
+		;;
+
+esac
+
+exit 0

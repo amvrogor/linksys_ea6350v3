@@ -1,0 +1,15 @@
+{
+	"admin/system/ea6350_usb_manager": {
+		"title": "USB HDD",
+		"order": 58,
+		"action": {
+			"type": "view",
+			"path": "ea6350_usb_manager/status"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-ea6350-usb-manager"
+			]
+		}
+	}
+}

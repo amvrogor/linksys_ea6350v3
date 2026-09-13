@@ -110,6 +110,7 @@ jobs:
         working-directory: openwrt
         run: |
           set -e
+
           ./scripts/feeds update -a
 
 
@@ -117,6 +118,7 @@ jobs:
         working-directory: openwrt
         run: |
           set -e
+
           ./scripts/feeds install -a
 
 
@@ -154,15 +156,43 @@ jobs:
 
           echo
           echo "=== ea6350-defaults ==="
-          find packages/ea6350-defaults -type f | sort
+
+          find packages/ea6350-defaults \
+            -type f \
+            | sort
+
 
           echo
           echo "=== ea6350-firmware-manager ==="
-          find packages/ea6350-firmware-manager -type f | sort
+
+          find packages/ea6350-firmware-manager \
+            -type f \
+            | sort
+
+
+          echo
+          echo "=== ea6350-usb-manager ==="
+
+          if [ ! -d packages/ea6350-usb-manager ]; then
+            echo
+            echo "ERROR:"
+            echo "packages/ea6350-usb-manager does not exist"
+
+            exit 1
+          fi
+
+          find packages/ea6350-usb-manager \
+            -type f \
+            | sort
+
 
           echo
           echo "=== homeusb ==="
-          find packages/homeusb -type f | sort
+
+          find packages/homeusb \
+            -type f \
+            | sort
+
 
           echo
           echo "=== Verify firmware-manager does not contain do_stage2 ==="
@@ -182,6 +212,92 @@ jobs:
 
           echo
           echo "[OK] firmware-manager does not contain do_stage2"
+
+
+          echo
+          echo "=== Verify USB manager does not contain do_stage2 ==="
+
+          if find packages/ea6350-usb-manager \
+              -path '*/lib/upgrade/do_stage2' \
+              -print \
+              | grep -q .; then
+
+            echo
+            echo "ERROR:"
+            echo "usb-manager must NOT contain:"
+            echo "lib/upgrade/do_stage2"
+
+            exit 1
+          fi
+
+          echo
+          echo "[OK] usb-manager does not contain do_stage2"
+
+
+      # ============================================================
+      # VERIFY PACKAGE LIST
+      #
+      # The project must use Samba4, not KSMBD.
+      # ============================================================
+
+      - name: Verify requested package policy
+        run: |
+          set -e
+
+          FILE="build/packages.txt"
+
+          echo
+          echo "========================================"
+          echo " REQUESTED PACKAGE POLICY"
+          echo "========================================"
+
+          test -f "$FILE"
+
+          echo
+          echo "=== build/packages.txt ==="
+
+          cat "$FILE"
+
+
+          echo
+          echo "=== Required Samba4 packages ==="
+
+          grep -Fx "samba4-server" "$FILE"
+          grep -Fx "luci-app-samba4" "$FILE"
+          grep -Fx "wsdd2" "$FILE"
+
+
+          echo
+          echo "=== Required custom packages ==="
+
+          grep -Fx "ea6350-defaults" "$FILE"
+          grep -Fx "ea6350-firmware-manager" "$FILE"
+          grep -Fx "ea6350-usb-manager" "$FILE"
+
+
+          echo
+          echo "=== Check that KSMBD is NOT requested ==="
+
+          if grep -Eq \
+              '^(ksmbd-server|luci-app-ksmbd)$' \
+              "$FILE"; then
+
+            echo
+            echo "ERROR:"
+            echo "KSMBD is present in build/packages.txt."
+            echo
+            echo "This project must use Samba4 instead."
+            echo
+            echo "Remove:"
+            echo "  ksmbd-server"
+            echo "  luci-app-ksmbd"
+
+            exit 1
+          fi
+
+
+          echo
+          echo "[OK] Package policy is correct"
 
 
       # ============================================================
@@ -210,14 +326,12 @@ jobs:
 
 
       # ============================================================
-      # FORCE TARGET AND PACKAGES
+      # FORCE TARGET AND CORE CUSTOM PACKAGES
       #
       # No ./scripts/config here.
-      # OpenWrt 25.12 checkout may contain scripts/config
-      # as a directory rather than an executable.
       # ============================================================
 
-      - name: Set OpenWrt target and packages
+      - name: Set OpenWrt target and core packages
         working-directory: openwrt
         run: |
           set -e
@@ -233,12 +347,15 @@ jobs:
 
           CONFIG_PACKAGE_ea6350-defaults=y
           CONFIG_PACKAGE_ea6350-firmware-manager=y
+          CONFIG_PACKAGE_ea6350-usb-manager=y
           EOF
+
 
           echo
           echo "=== Running make defconfig ==="
 
           make defconfig
+
 
           echo
           echo "=== Final target configuration ==="
@@ -248,11 +365,12 @@ jobs:
             .config \
             || true
 
+
           echo
           echo "=== Final custom package configuration ==="
 
           grep -E \
-            '^CONFIG_PACKAGE_(ea6350-defaults|ea6350-firmware-manager)=' \
+            '^CONFIG_PACKAGE_(ea6350-defaults|ea6350-firmware-manager|ea6350-usb-manager)=' \
             .config \
             || true
 
@@ -270,6 +388,7 @@ jobs:
           echo "=== Requested packages from build/packages.txt ==="
 
           cat ../build/packages.txt
+
 
           echo
           echo "=== Adding requested packages ==="
@@ -291,12 +410,171 @@ jobs:
           done < ../build/packages.txt \
             | tee /tmp/requested-package-config
 
+
           cat /tmp/requested-package-config >> .config
+
 
           echo
           echo "=== Normalize configuration ==="
 
           make defconfig
+
+
+      # ============================================================
+      # VERIFY FINAL PACKAGE CONFIGURATION
+      #
+      # This is intentionally BEFORE download/build.
+      # If Samba4 is unavailable in the 25.12 feeds, the build
+      # stops here with a clear error instead of silently building
+      # a firmware without Samba4.
+      # ============================================================
+
+      - name: Verify final package configuration
+        working-directory: openwrt
+        run: |
+          set -e
+
+          echo
+          echo "========================================"
+          echo " FINAL PACKAGE CONFIGURATION"
+          echo "========================================"
+
+
+          check_enabled() {
+            local symbol="$1"
+
+            if ! grep -qx "CONFIG_PACKAGE_${symbol}=y" .config; then
+              echo
+              echo "ERROR:"
+              echo "CONFIG_PACKAGE_${symbol}=y is NOT enabled."
+
+              echo
+              echo "Matching configuration entries:"
+
+              grep -E \
+                "^CONFIG_PACKAGE_${symbol}=" \
+                .config \
+                || true
+
+              exit 1
+            fi
+
+            echo "[OK] CONFIG_PACKAGE_${symbol}=y"
+          }
+
+
+          check_disabled() {
+            local symbol="$1"
+
+            if grep -qx "CONFIG_PACKAGE_${symbol}=y" .config; then
+              echo
+              echo "ERROR:"
+              echo "CONFIG_PACKAGE_${symbol}=y is enabled."
+              echo "This package must NOT be included."
+
+              exit 1
+            fi
+
+            echo "[OK] CONFIG_PACKAGE_${symbol} is disabled"
+          }
+
+
+          echo
+          echo "=== Target ==="
+
+          grep -qx \
+            'CONFIG_TARGET_ipq40xx=y' \
+            .config
+
+          grep -qx \
+            'CONFIG_TARGET_ipq40xx_generic=y' \
+            .config
+
+          grep -qx \
+            'CONFIG_TARGET_ipq40xx_generic_DEVICE_linksys_ea6350v3=y' \
+            .config
+
+          echo "[OK] Linksys EA6350v3 target"
+
+
+          echo
+          echo "=== Samba4 ==="
+
+          check_enabled samba4-server
+          check_enabled luci-app-samba4
+          check_enabled wsdd2
+
+
+          echo
+          echo "=== Custom packages ==="
+
+          check_enabled ea6350-defaults
+          check_enabled ea6350-firmware-manager
+          check_enabled ea6350-usb-manager
+
+
+          echo
+          echo "=== KSMBD ==="
+
+          check_disabled ksmbd-server
+          check_disabled luci-app-ksmbd
+
+
+          echo
+          echo "[OK] Final package configuration is correct"
+
+
+      # ============================================================
+      # VERIFY SAMBA4 PACKAGE SOURCE
+      #
+      # The config check above confirms the symbol.
+      # This check confirms that the actual package definition
+      # exists in the OpenWrt package tree.
+      # ============================================================
+
+      - name: Verify Samba4 package source
+        run: |
+          set -e
+
+          echo
+          echo "========================================"
+          echo " SAMBA4 PACKAGE SOURCE"
+          echo "========================================"
+
+
+          SAMBA4_SERVER_DIR="openwrt/feeds/packages/net/samba4"
+          SAMBA4_MAKEFILE="$SAMBA4_SERVER_DIR/Makefile"
+
+
+          if [ ! -f "$SAMBA4_MAKEFILE" ]; then
+
+            echo
+            echo "ERROR:"
+            echo "Samba4 package source was not found:"
+            echo "$SAMBA4_MAKEFILE"
+
+            echo
+            echo "This OpenWrt 25.12 feed does not currently provide"
+            echo "the Samba4 package definition required by this build."
+
+            exit 1
+          fi
+
+
+          echo
+          echo "[OK] Samba4 package definition exists"
+
+          echo
+          echo "Makefile:"
+          echo "$SAMBA4_MAKEFILE"
+
+          echo
+          grep -n \
+            -E \
+            'PKG_NAME|PKG_VERSION|samba4-server|samba4-libs' \
+            "$SAMBA4_MAKEFILE" \
+            | head -n 40 \
+            || true
 
 
       # ============================================================
@@ -324,7 +602,7 @@ jobs:
       # ============================================================
       # FINAL DO_STAGE2
       #
-      # This is intentionally repeated immediately before build.
+      # Re-copy immediately before build.
       # ============================================================
 
       - name: Finalize custom do_stage2
@@ -343,15 +621,20 @@ jobs:
 
           FILE="openwrt/package/base-files/files/lib/upgrade/do_stage2"
 
+
           echo
           echo "========================================"
           echo " FINAL do_stage2 CHECK"
           echo "========================================"
 
+
+          test -f "$FILE"
+
           ls -l "$FILE"
 
           echo
           wc -c "$FILE"
+
 
           echo
           echo "Required marker:"
@@ -359,6 +642,31 @@ jobs:
           grep -n \
             "UPGRADE_OPT_USE_CURR_PART" \
             "$FILE"
+
+
+          echo
+          echo "=== Verify package ownership layout ==="
+
+          if find packages \
+              -path '*/files/lib/upgrade/do_stage2' \
+              -print \
+              | grep -q .; then
+
+            echo
+            echo "ERROR:"
+            echo "A custom package contains lib/upgrade/do_stage2."
+
+            find packages \
+              -path '*/files/lib/upgrade/do_stage2' \
+              -print
+
+            exit 1
+          fi
+
+
+          echo
+          echo "[OK] No custom package owns do_stage2"
+
 
           echo
           echo "[OK] Custom do_stage2 is present immediately before build"
@@ -398,22 +706,27 @@ jobs:
 
           FILE="openwrt/package/base-files/files/lib/upgrade/do_stage2"
 
+
           echo
           echo "========================================"
           echo " do_stage2 SOURCE VERIFICATION"
           echo "========================================"
 
+
           test -f "$FILE"
 
           ls -l "$FILE"
 
+
           echo
           wc -c "$FILE"
+
 
           echo
           grep -n \
             "UPGRADE_OPT_USE_CURR_PART" \
             "$FILE"
+
 
           echo
           echo "[OK] Source tree contains custom do_stage2"
@@ -433,7 +746,9 @@ jobs:
             -name 'base-files-*.apk' \
             | head -n1)"
 
+
           if [ -z "$PKG" ]; then
+
             echo
             echo "ERROR: base-files APK was not found"
 
@@ -442,13 +757,17 @@ jobs:
               | sort
 
             exit 1
+
           fi
 
+
           test -f "$PKG"
+
 
           echo
           echo "Base-files APK:"
           echo "$PKG"
+
 
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
 
@@ -456,9 +775,7 @@ jobs:
       # ============================================================
       # VERIFY BASE-FILES APK
       #
-      # DO NOT USE tar tf HERE.
-      # APK is not a normal tar archive from the host's point
-      # of view because of the APK package structure/signature.
+      # Do not use tar tf.
       # ============================================================
 
       - name: Verify do_stage2 in base-files APK
@@ -471,26 +788,32 @@ jobs:
 
           DEST="$(mktemp -d)"
 
+
           echo
           echo "========================================"
           echo " BASE-FILES APK VERIFICATION"
           echo "========================================"
 
+
           echo
           echo "Package:"
           echo "$PKG"
+
 
           echo
           echo "APK tool:"
           echo "$APK"
 
+
           test -x "$APK"
           test -f "$PKG"
+
 
           echo
           echo "APK version:"
 
           "$APK" --version
+
 
           echo
           echo "=== Extracting package ==="
@@ -501,10 +824,12 @@ jobs:
             --destination "$DEST" \
             "$PKG"
 
+
           echo
           echo "=== Checking do_stage2 ==="
 
           FILE="$DEST/lib/upgrade/do_stage2"
+
 
           if [ ! -f "$FILE" ]; then
 
@@ -526,18 +851,22 @@ jobs:
 
           fi
 
+
           echo
           echo "[OK] do_stage2 exists in base-files APK"
+
 
           echo
           echo "=== Extracted file ==="
 
           ls -l "$FILE"
 
+
           echo
           echo "Size:"
 
           wc -c "$FILE"
+
 
           echo
           echo "=== Required marker ==="
@@ -546,8 +875,10 @@ jobs:
             "UPGRADE_OPT_USE_CURR_PART" \
             "$FILE"
 
+
           echo
           echo "[OK] Custom do_stage2 is really inside base-files APK"
+
 
           rm -rf "$DEST"
 
@@ -565,7 +896,19 @@ jobs:
 
 
       # ============================================================
-      # VERIFY FIRMWARE MANAGER APK
+      # BUILD USB MANAGER PACKAGE
+      # ============================================================
+
+      - name: Build USB manager package
+        working-directory: openwrt
+        run: |
+          set -e
+
+          make package/ea6350-usb-manager/compile V=s
+
+
+      # ============================================================
+      # VERIFY FIRMWARE MANAGER PACKAGE
       # ============================================================
 
       - name: Verify firmware manager package
@@ -579,7 +922,9 @@ jobs:
             -name 'ea6350-firmware-manager-*.apk' \
             | head -n1)"
 
+
           if [ -z "$PKG" ]; then
+
             echo
             echo "ERROR: firmware-manager APK not found"
 
@@ -588,31 +933,41 @@ jobs:
               | sort
 
             exit 1
+
           fi
 
+
           test -f "$PKG"
+
+
+          DEST="$(mktemp -d)"
+
 
           echo
           echo "========================================"
           echo " FIRMWARE MANAGER VERIFICATION"
           echo "========================================"
 
+
           echo
           echo "Package:"
           echo "$PKG"
 
-          echo
-          echo "=== Manifest ==="
 
-          "$APK" manifest "$PKG" \
-            | tee /tmp/firmware-manager-manifest
+          echo
+          echo "=== Extracting package ==="
+
+          "$APK" extract \
+            --allow-untrusted \
+            --no-chown \
+            --destination "$DEST" \
+            "$PKG"
+
 
           echo
           echo "=== Check that do_stage2 is NOT present ==="
 
-          if grep -E \
-              '(^|/)lib/upgrade/do_stage2$' \
-              /tmp/firmware-manager-manifest; then
+          if [ -f "$DEST/lib/upgrade/do_stage2" ]; then
 
             echo
             echo "ERROR:"
@@ -620,12 +975,232 @@ jobs:
 
             exit 1
 
-          else
+          fi
+
+
+          echo
+          echo "[OK] firmware-manager does not contain do_stage2"
+
+
+          rm -rf "$DEST"
+
+
+      # ============================================================
+      # VERIFY USB MANAGER PACKAGE
+      # ============================================================
+
+      - name: Verify USB manager package
+        run: |
+          set -e
+
+          APK="openwrt/staging_dir/host/bin/apk"
+
+          PKG="$(find openwrt/bin/packages \
+            -type f \
+            -name 'ea6350-usb-manager-*.apk' \
+            | head -n1)"
+
+
+          if [ -z "$PKG" ]; then
 
             echo
-            echo "[OK] firmware-manager does not contain do_stage2"
+            echo "ERROR: usb-manager APK not found"
+
+            find openwrt/bin/packages \
+              -type f \
+              | sort
+
+            exit 1
 
           fi
+
+
+          test -f "$PKG"
+
+
+          DEST="$(mktemp -d)"
+
+
+          echo
+          echo "========================================"
+          echo " USB MANAGER VERIFICATION"
+          echo "========================================"
+
+
+          echo
+          echo "Package:"
+          echo "$PKG"
+
+
+          echo
+          echo "=== Extracting package ==="
+
+          "$APK" extract \
+            --allow-untrusted \
+            --no-chown \
+            --destination "$DEST" \
+            "$PKG"
+
+
+          echo
+          echo "=== Package contents ==="
+
+          find "$DEST" \
+            -type f \
+            | sort
+
+
+          echo
+          echo "=== Check that do_stage2 is NOT present ==="
+
+          if [ -f "$DEST/lib/upgrade/do_stage2" ]; then
+
+            echo
+            echo "ERROR:"
+            echo "usb-manager package contains do_stage2"
+
+            exit 1
+
+          fi
+
+
+          echo
+          echo "[OK] usb-manager does not contain do_stage2"
+
+
+          rm -rf "$DEST"
+
+
+      # ============================================================
+      # VERIFY SAMBA4 PACKAGES
+      # ============================================================
+
+      - name: Verify Samba4 packages
+        run: |
+          set -e
+
+          echo
+          echo "========================================"
+          echo " SAMBA4 PACKAGE VERIFICATION"
+          echo "========================================"
+
+
+          echo
+          echo "=== samba4-server ==="
+
+          find openwrt/bin/packages \
+            -type f \
+            -name 'samba4-server-*.apk' \
+            | sort
+
+
+          echo
+          echo "=== luci-app-samba4 ==="
+
+          find openwrt/bin/packages \
+            -type f \
+            -name 'luci-app-samba4-*.apk' \
+            | sort
+
+
+          echo
+          echo "=== wsdd2 ==="
+
+          find openwrt/bin/packages \
+            -type f \
+            -name 'wsdd2-*.apk' \
+            | sort
+
+
+          SAMBA4_SERVER="$(find openwrt/bin/packages \
+            -type f \
+            -name 'samba4-server-*.apk' \
+            | head -n1)"
+
+
+          LUCI_SAMBA4="$(find openwrt/bin/packages \
+            -type f \
+            -name 'luci-app-samba4-*.apk' \
+            | head -n1)"
+
+
+          WSDD2="$(find openwrt/bin/packages \
+            -type f \
+            -name 'wsdd2-*.apk' \
+            | head -n1)"
+
+
+          if [ -z "$SAMBA4_SERVER" ]; then
+
+            echo
+            echo "ERROR:"
+            echo "samba4-server APK was NOT built."
+
+            exit 1
+
+          fi
+
+
+          if [ -z "$LUCI_SAMBA4" ]; then
+
+            echo
+            echo "ERROR:"
+            echo "luci-app-samba4 APK was NOT built."
+
+            exit 1
+
+          fi
+
+
+          if [ -z "$WSDD2" ]; then
+
+            echo
+            echo "ERROR:"
+            echo "wsdd2 APK was NOT built."
+
+            exit 1
+
+          fi
+
+
+          echo
+          echo "[OK] samba4-server APK exists"
+          echo "[OK] luci-app-samba4 APK exists"
+          echo "[OK] wsdd2 APK exists"
+
+
+          echo
+          echo "=== Verify KSMBD APKs are absent ==="
+
+          if find openwrt/bin/packages \
+              -type f \
+              \( \
+                -name 'ksmbd-server-*.apk' \
+                -o \
+                -name 'luci-app-ksmbd-*.apk' \
+              \) \
+              | grep -q .; then
+
+            echo
+            echo "ERROR:"
+            echo "KSMBD packages were built."
+
+            find openwrt/bin/packages \
+              -type f \
+              \( \
+                -name 'ksmbd-server-*.apk' \
+                -o \
+                -name 'luci-app-ksmbd-*.apk' \
+              \) \
+              | sort
+
+            exit 1
+
+          fi
+
+
+          echo
+          echo "[OK] No KSMBD packages were built"
 
 
       # ============================================================
@@ -638,6 +1213,7 @@ jobs:
           echo "========================================"
           echo " FIRMWARE OUTPUT"
           echo "========================================"
+
 
           find openwrt/bin/targets \
             -type f \
@@ -655,6 +1231,7 @@ jobs:
           echo " PACKAGE OUTPUT"
           echo "========================================"
 
+
           find openwrt/bin/packages \
             -type f \
             -name '*.apk' \
@@ -671,25 +1248,35 @@ jobs:
 
           mkdir -p build-info
 
+
           cp \
             openwrt/.config \
             build-info/openwrt.config
+
 
           cp \
             patches/openwrt/do_stage2 \
             build-info/do_stage2.custom
 
+
           cp \
             openwrt/package/base-files/files/lib/upgrade/do_stage2 \
             build-info/do_stage2.in-tree
+
 
           cp \
             build/packages.txt \
             build-info/packages.txt
 
+
           cp \
             packages/ea6350-firmware-manager/Makefile \
             build-info/firmware-manager.Makefile
+
+
+          cp \
+            packages/ea6350-usb-manager/Makefile \
+            build-info/usb-manager.Makefile
 
 
       # ============================================================

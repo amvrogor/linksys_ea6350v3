@@ -1,63 +1,57 @@
 luci
-
+luci-base
+luci-mod-admin-full
+luci-mod-network
+luci-mod-status
+luci-mod-system
+luci-theme-bootstrap
 luci-ssl
 
-ttyd
-
-luci-app-ttyd
+luci-app-adblock-fast
+adblock-fast
 
 luci-app-commands
 
-luci-app-ksmbd
+luci-app-nlbwmon
+nlbwmon
 
-ksmbd-server
+luci-app-package-manager
 
-wsdd2
+luci-app-ttyd
+ttyd
 
-luci-app-minidlna
-
-minidlna
-
-vsftpd
-
-kmod-usb-storage
-
-kmod-fs-ext4
-
-kmod-fs-exfat
-
-kmod-fs-ntfs3
-
-e2fsprogs
-
-fdisk
-
-block-mount
-
-kmod-usb3
-
-usbutils
-
-hd-idle
-
-htop
-
-nano
-
-mc
-
-luci-app-adblock-fast
-
-adblock-fast
+luci-app-wol
+etherwake
 
 https-dns-proxy
 
-luci-app-wol
+mc
+nano
+htop
 
-luci-app-nlbwmon
+samba4-server
+luci-app-samba4
+wsdd2
 
-nlbwmon
+vsftpd
+
+minidlna
+luci-app-minidlna
+
+hd-idle
+
+kmod-usb-storage
+kmod-usb3
+usbutils
+
+block-mount
+kmod-fs-ext4
+kmod-fs-exfat
+kmod-fs-ntfs3
+
+e2fsprogs
+fdisk
 
 ea6350-defaults
-
 ea6350-firmware-manager
+ea6350-usb-manager

@@ -1,0 +1,39 @@
+#!/bin/sh
+
+MOUNT_POINT="/mnt/sda"
+
+mounted="0"
+device=""
+filesystem=""
+size=""
+used=""
+available=""
+
+if mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
+	mounted="1"
+
+	device="$(awk -v mp="$MOUNT_POINT" '$2 == mp {print $1; exit}' /proc/mounts)"
+	filesystem="$(awk -v mp="$MOUNT_POINT" '$2 == mp {print $3; exit}' /proc/mounts)"
+
+	DF_LINE="$(df -h "$MOUNT_POINT" 2>/dev/null | tail -n 1)"
+
+	if [ -n "$DF_LINE" ]; then
+		size="$(echo "$DF_LINE" | awk '{print $2}')"
+		used="$(echo "$DF_LINE" | awk '{print $3}')"
+		available="$(echo "$DF_LINE" | awk '{print $4}')"
+	fi
+fi
+
+json_escape()
+{
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+printf '{"mounted":%s,"mount_point":"%s","device":"%s","filesystem":"%s","size":"%s","used":"%s","available":"%s"}\n' \
+	"$mounted" \
+	"$(json_escape "$MOUNT_POINT")" \
+	"$(json_escape "$device")" \
+	"$(json_escape "$filesystem")" \
+	"$(json_escape "$size")" \
+	"$(json_escape "$used")" \
+	"$(json_escape "$available")"

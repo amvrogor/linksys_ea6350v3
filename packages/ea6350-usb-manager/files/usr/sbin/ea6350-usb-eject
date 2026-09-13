@@ -1,0 +1,111 @@
+#!/bin/sh
+
+MOUNT_POINT="/mnt/sda"
+STATE_FILE="/tmp/ea6350-usb-services"
+
+SERVICES="samba4 vsftpd minidlna"
+
+log()
+{
+	logger -t ea6350-usb-manager "$*"
+}
+
+is_running()
+{
+	local service="$1"
+
+	[ -x "/etc/init.d/$service" ] || return 1
+
+	/etc/init.d/"$service" status >/dev/null 2>&1
+}
+
+is_mounted()
+{
+	mountpoint -q "$MOUNT_POINT" 2>/dev/null
+}
+
+#
+# Already unmounted.
+#
+
+if ! is_mounted; then
+	echo "USB HDD is already unmounted."
+	exit 0
+fi
+
+#
+# Remember services which are currently running.
+#
+
+: > "$STATE_FILE"
+
+for service in $SERVICES; do
+	if is_running "$service"; then
+		echo "$service" >> "$STATE_FILE"
+	fi
+done
+
+#
+# Stop services.
+#
+
+for service in $SERVICES; do
+	if grep -qx "$service" "$STATE_FILE" 2>/dev/null; then
+		log "Stopping $service"
+		/etc/init.d/"$service" stop >/dev/null 2>&1 || {
+			echo "ERROR: cannot stop $service"
+			exit 1
+		}
+	fi
+done
+
+#
+# Flush all pending writes.
+#
+
+sync
+sleep 2
+
+#
+# If fuser exists, check for remaining users.
+#
+
+if command -v fuser >/dev/null 2>&1; then
+	if fuser -m "$MOUNT_POINT" >/dev/null 2>&1; then
+		sync
+		sleep 2
+
+		if fuser -m "$MOUNT_POINT" >/dev/null 2>&1; then
+			echo "ERROR: USB HDD is still in use."
+			echo "The disk was NOT unmounted."
+			echo "DO NOT disconnect the USB cable."
+			exit 1
+		fi
+	fi
+fi
+
+#
+# Unmount.
+#
+
+log "Unmounting $MOUNT_POINT"
+
+if ! umount "$MOUNT_POINT"; then
+	echo "ERROR: cannot unmount $MOUNT_POINT."
+	echo "DO NOT disconnect the USB cable."
+	exit 1
+fi
+
+sync
+
+if is_mounted; then
+	echo "ERROR: mount point is still active."
+	echo "DO NOT disconnect the USB cable."
+	exit 1
+fi
+
+echo "OK"
+echo "USB HDD has been safely unmounted."
+echo "It is now safe to disconnect the USB cable."
+
+exit 0
