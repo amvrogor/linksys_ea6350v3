@@ -2,6 +2,7 @@
 
 MOUNT_POINT="/mnt/sda"
 STATE_FILE="/tmp/ea6350-usb-services"
+PENDING_FILE="/tmp/ea6350-usb-eject-pending"
 
 SERVICES="samba4 vsftpd minidlna"
 
@@ -10,57 +11,155 @@ log()
 	logger -t ea6350-usb-manager "$*"
 }
 
+is_running()
+{
+	local service="$1"
+
+	[ -x "/etc/init.d/$service" ] || return 1
+
+	/etc/init.d/"$service" running >/dev/null 2>&1
+}
+
+start_service()
+{
+	local service="$1"
+	local attempt
+
+	[ -x "/etc/init.d/$service" ] || {
+		log "Service $service is not installed"
+		return 1
+	}
+
+	for attempt in 1 2 3; do
+
+		log "Starting $service (attempt $attempt)"
+
+		if /etc/init.d/"$service" start >/dev/null 2>&1; then
+			sleep 1
+
+			if is_running "$service"; then
+				log "$service started successfully"
+				return 0
+			fi
+		fi
+
+		sleep 1
+	done
+
+	log "ERROR: failed to start $service"
+
+	return 1
+}
+
+restore_saved_services()
+{
+	local service
+	local failed=0
+	local tmp_state
+
+	tmp_state="${STATE_FILE}.new"
+
+	: > "$tmp_state" || {
+		log "ERROR: cannot create temporary state file"
+		return 1
+	}
+
+	while IFS= read -r service; do
+
+		[ -n "$service" ] || continue
+
+		case "$service" in
+			samba4|vsftpd|minidlna)
+				;;
+			*)
+				log "Ignoring unknown service in state file: $service"
+				continue
+				;;
+		esac
+
+		if is_running "$service"; then
+			log "$service is already running"
+			continue
+		fi
+
+		if ! start_service "$service"; then
+			echo "$service" >> "$tmp_state"
+			failed=1
+		fi
+
+	done < "$STATE_FILE"
+
+	if [ "$failed" -eq 0 ]; then
+
+		rm -f "$tmp_state"
+		rm -f "$STATE_FILE"
+		rm -f "$PENDING_FILE"
+
+		log "All previously running USB services restored"
+
+	else
+
+		mv -f "$tmp_state" "$STATE_FILE"
+
+		log "Some USB services could not be restored"
+		log "They will be retried on the next mount event"
+
+		return 1
+	fi
+
+	return 0
+}
+
+start_enabled_services()
+{
+	local service
+
+	for service in $SERVICES; do
+
+		[ -x "/etc/init.d/$service" ] || continue
+
+		if /etc/init.d/"$service" enabled >/dev/null 2>&1; then
+
+			if is_running "$service"; then
+				log "$service is already running"
+				continue
+			fi
+
+			start_service "$service" || true
+		fi
+
+	done
+}
+
 case "$1" in
 
 	add)
-
-		sleep 2
 
 		if ! mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
 			log "HDD is not mounted at $MOUNT_POINT"
 			exit 0
 		fi
 
+		log "HDD mounted at $MOUNT_POINT"
+
 		#
-		# If we know which services were running before
-		# removal, restore exactly those services.
+		# A state file means that the HDD was previously
+		# safely removed and these are the services which
+		# were running before removal.
 		#
 
-		if [ -s "$STATE_FILE" ]; then
+		if [ -f "$STATE_FILE" ]; then
 
-			while IFS= read -r service; do
-
-				[ -n "$service" ] || continue
-
-				if [ -x "/etc/init.d/$service" ]; then
-					log "Starting $service"
-					/etc/init.d/"$service" start >/dev/null 2>&1 || \
-						log "WARNING: failed to start $service"
-				fi
-
-			done < "$STATE_FILE"
-
-			rm -f "$STATE_FILE"
+			restore_saved_services || true
 
 		else
 
 			#
-			# After a router reboot there is no state file.
-			# Start services that are enabled in UCI/init.
+			# Normal startup / router reboot:
+			# start only services enabled in init.
 			#
 
-			for service in $SERVICES; do
-
-				if [ -x "/etc/init.d/$service" ] && \
-				   /etc/init.d/"$service" enabled >/dev/null 2>&1; then
-
-					log "Starting enabled service $service"
-					/etc/init.d/"$service" start >/dev/null 2>&1 || true
-
-				fi
-
-			done
-
+			start_enabled_services
 		fi
 
 		;;
