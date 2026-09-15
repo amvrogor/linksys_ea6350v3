@@ -1,16 +1,15 @@
 {
 	"luci-app-ea6350-usb-manager": {
 		"description": "USB HDD status and safe removal",
-		"write": {
-			"ubus": {
-				"file": [
-					"exec"
-				]
-			},
+		"read": {
 			"file": {
 				"/usr/sbin/ea6350-usb-status": [
 					"exec"
-				],
+				]
+			}
+		},
+		"write": {
+			"file": {
 				"/usr/sbin/ea6350-usb-eject": [
 					"exec"
 				]

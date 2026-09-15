@@ -4,16 +4,19 @@
 'require ui';
 'require fs';
 
-function getStatus() {
+function getStatus()
+{
 	return fs.exec('/usr/sbin/ea6350-usb-status', []);
 }
 
-function statusFromResult(res) {
+function statusFromResult(res)
+{
 	var text = res.stdout || '{}';
 
 	try {
 		return JSON.parse(text);
-	} catch (e) {
+	}
+	catch (e) {
 		return {
 			mounted: false,
 			error: 'Invalid status response'
@@ -21,56 +24,40 @@ function statusFromResult(res) {
 	}
 }
 
+function makeRow(label, value)
+{
+	return E('tr', {}, [
+		E('td', {
+			'style': 'font-weight:bold;width:30%'
+		}, label),
+
+		E('td', {}, value || '—')
+	]);
+}
+
 return view.extend({
 
-	load: function() {
+	load: function()
+	{
 		return getStatus().then(statusFromResult);
 	},
 
-	render: function(status) {
-
-		var mounted = status.mounted === 1 ||
+	render: function(status)
+	{
+		var mounted =
+			status.mounted === 1 ||
 			status.mounted === true;
-
-		var rows = [
-			[
-				_('Mount point'),
-				status.mount_point || '/mnt/sda'
-			],
-			[
-				_('Device'),
-				status.device || '—'
-			],
-			[
-				_('Filesystem'),
-				status.filesystem || '—'
-			],
-			[
-				_('Capacity'),
-				status.size || '—'
-			],
-			[
-				_('Used'),
-				status.used || '—'
-			],
-			[
-				_('Available'),
-				status.available || '—'
-			]
-		];
 
 		var table = E('table', {
 			'class': 'table'
-		});
-
-		rows.forEach(function(row) {
-			table.appendChild(E('tr', {}, [
-				E('td', {
-					'style': 'font-weight:bold;width:30%'
-				}, row[0]),
-				E('td', {}, row[1])
-			]));
-		});
+		}, [
+			makeRow(_('Mount point'), status.mount_point || '/mnt/sda'),
+			makeRow(_('Device'), status.device),
+			makeRow(_('Filesystem'), status.filesystem),
+			makeRow(_('Capacity'), status.size),
+			makeRow(_('Used'), status.used),
+			makeRow(_('Available'), status.available)
+		]);
 
 		var statusBox = E('div', {
 			'class': mounted ?
@@ -83,10 +70,13 @@ return view.extend({
 
 		var content = [
 			E('h2', {}, _('USB HDD')),
+
 			E('p', {}, _(
 				'Status and safe removal of the external USB hard disk.'
 			)),
+
 			statusBox,
+
 			table
 		];
 
@@ -117,15 +107,15 @@ return view.extend({
 
 							E('button', {
 								'class': 'btn cbi-button cbi-button-remove',
-								'click': function() {
-
+								'click': function()
+								{
 									ui.hideModal();
 
 									return fs.exec(
 										'/usr/sbin/ea6350-usb-eject',
 										[]
-									).then(function(res) {
-
+									).then(function(res)
+									{
 										var output =
 											(res.stdout || '') +
 											(res.stderr || '');
@@ -150,16 +140,17 @@ return view.extend({
 												}, [
 													E('button', {
 														'class': 'btn',
-														'click': function() {
+														'click': function()
+														{
 															ui.hideModal();
 															location.reload();
 														}
 													}, _('Close'))
 												])
-
 											]);
 
-										} else {
+										}
+										else {
 
 											ui.showModal(_('USB HDD'), [
 
@@ -187,13 +178,11 @@ return view.extend({
 														'click': ui.hideModal
 													}, _('Close'))
 												])
-
 											]);
 										}
 									});
 								}
 							}, _('Safely remove HDD'))
-
 						])
 					]);
 				})

@@ -1,10 +1,7 @@
 #!/bin/sh
 
 MOUNT_POINT="/mnt/sda"
-
 STATE_FILE="/tmp/ea6350-usb-services"
-PENDING_FILE="/tmp/ea6350-usb-eject-pending"
-LOCK_DIR="/tmp/ea6350-usb-eject.lock"
 
 SERVICES="samba4 vsftpd minidlna"
 
@@ -19,211 +16,94 @@ is_running()
 
 	[ -x "/etc/init.d/$service" ] || return 1
 
-	/etc/init.d/"$service" running >/dev/null 2>&1
+	/etc/init.d/"$service" status >/dev/null 2>&1
 }
 
 is_mounted()
 {
-	mountpoint -q "$MOUNT_POINT" 2>/dev/null
+	grep -qs "[[:space:]]${MOUNT_POINT}[[:space:]]" /proc/mounts
 }
 
 #
-# Prevent two simultaneous eject operations.
-#
-
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-
-	echo "ERROR: another HDD operation is already running."
-	echo "Please wait and try again."
-
-	exit 1
-fi
-
-trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
-
-#
-# The HDD must currently be mounted.
+# Already unmounted.
 #
 
 if ! is_mounted; then
-
 	echo "USB HDD is already unmounted."
 	exit 0
-
 fi
 
 #
-# Start a new eject transaction only if one is not
-# already in progress.
-#
-# This is the important part for retrying a failed
-# unmount: the original service list is preserved.
+# Remember services which are currently running.
 #
 
-if [ ! -f "$PENDING_FILE" ]; then
-
-	log "Starting new HDD eject transaction"
-
-	: > "$STATE_FILE" || {
-		echo "ERROR: cannot create service state file."
-		exit 1
-	}
-
-	for service in $SERVICES; do
-
-		if is_running "$service"; then
-			echo "$service" >> "$STATE_FILE"
-		fi
-
-	done
-
-	touch "$PENDING_FILE" || {
-		echo "ERROR: cannot create eject state."
-		exit 1
-	}
-
-else
-
-	log "Continuing previous HDD eject transaction"
-
-fi
-
-#
-# Stop ALL NAS services which are currently running.
-#
-# We intentionally do not limit this to STATE_FILE.
-#
-# If the user manually restarted a service after a failed
-# eject attempt, it must also be stopped before unmounting.
-#
+: > "$STATE_FILE"
 
 for service in $SERVICES; do
-
 	if is_running "$service"; then
-
-		log "Stopping $service"
-
-		if ! /etc/init.d/"$service" stop >/dev/null 2>&1; then
-
-			echo "ERROR: cannot stop $service."
-			echo "The disk was NOT unmounted."
-			echo "DO NOT disconnect the USB cable."
-
-			exit 1
-		fi
-
+		echo "$service" >> "$STATE_FILE"
 	fi
-
 done
 
 #
-# Flush filesystem buffers.
+# Stop services.
 #
 
-log "Synchronizing filesystem"
+for service in $SERVICES; do
+	if grep -qx "$service" "$STATE_FILE" 2>/dev/null; then
+		log "Stopping $service"
+
+		/etc/init.d/"$service" stop >/dev/null 2>&1 || {
+			echo "ERROR: cannot stop $service"
+			exit 1
+		}
+	fi
+done
+
+#
+# Flush all pending writes.
+#
 
 sync
-sleep 1
+sleep 2
 
 #
-# Optional fuser check.
-#
-# fuser is not required. The final umount below remains
-# the authoritative check.
+# If fuser exists, check for remaining users.
 #
 
 if command -v fuser >/dev/null 2>&1; then
-
 	if fuser -m "$MOUNT_POINT" >/dev/null 2>&1; then
-
-		log "HDD is still in use"
-
 		sync
-		sleep 1
+		sleep 2
 
 		if fuser -m "$MOUNT_POINT" >/dev/null 2>&1; then
-
 			echo "ERROR: USB HDD is still in use."
 			echo "The disk was NOT unmounted."
 			echo "DO NOT disconnect the USB cable."
-
 			exit 1
 		fi
 	fi
-
 fi
 
 #
-# Try normal unmount several times.
-#
-# We deliberately DO NOT use lazy unmount (-l).
-# Lazy unmount would be inappropriate for physical
-# removal of the USB disk.
+# Unmount.
 #
 
 log "Unmounting $MOUNT_POINT"
 
-unmounted=0
-attempt=1
-
-while [ "$attempt" -le 3 ]; do
-
-	if umount "$MOUNT_POINT" >/dev/null 2>&1; then
-		unmounted=1
-		break
-	fi
-
-	log "Unmount attempt $attempt failed"
-
-	sync
-	sleep 1
-
-	attempt=$((attempt + 1))
-
-done
-
-if [ "$unmounted" -ne 1 ]; then
-
+if ! umount "$MOUNT_POINT"; then
 	echo "ERROR: cannot unmount $MOUNT_POINT."
-	echo
-	echo "The HDD is still mounted."
-	echo "The disk was NOT safely removed."
-	echo
 	echo "DO NOT disconnect the USB cable."
-
 	exit 1
-
 fi
-
-#
-# Verify that the mount point is really unmounted.
-#
 
 sync
 
 if is_mounted; then
-
 	echo "ERROR: mount point is still active."
-	echo
-	echo "The HDD was NOT safely removed."
 	echo "DO NOT disconnect the USB cable."
-
 	exit 1
-
 fi
-
-#
-# IMPORTANT:
-#
-# STATE_FILE and PENDING_FILE are intentionally NOT deleted here.
-#
-# They are needed when the HDD is connected again so that
-# only the services which were running before the removal
-# are restored.
-#
-# They will be removed by ea6350-usb-hotplug after successful
-# service restoration.
-#
 
 echo "OK"
 echo "USB HDD has been safely unmounted."

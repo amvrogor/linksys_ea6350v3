@@ -9,7 +9,7 @@ size=""
 used=""
 available=""
 
-if mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
+if grep -qs "[[:space:]]${MOUNT_POINT}[[:space:]]" /proc/mounts; then
 	mounted="1"
 
 	device="$(awk -v mp="$MOUNT_POINT" '$2 == mp {print $1; exit}' /proc/mounts)"
