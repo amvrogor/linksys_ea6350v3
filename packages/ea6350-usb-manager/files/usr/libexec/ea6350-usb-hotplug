@@ -5,6 +5,9 @@ STATE_FILE="/tmp/ea6350-usb-services"
 
 SERVICES="samba4 vsftpd minidlna"
 
+MAX_WAIT=30
+WAIT_STEP=2
+
 log()
 {
 	logger -t ea6350-usb-manager "$*"
@@ -15,13 +18,85 @@ is_mounted()
 	grep -qs "[[:space:]]${MOUNT_POINT}[[:space:]]" /proc/mounts
 }
 
+is_enabled()
+{
+	local service="$1"
+
+	[ -x "/etc/init.d/$service" ] || return 1
+
+	/etc/init.d/"$service" enabled >/dev/null 2>&1
+}
+
+is_running()
+{
+	local service="$1"
+
+	[ -x "/etc/init.d/$service" ] || return 1
+
+	/etc/init.d/"$service" status >/dev/null 2>&1
+}
+
+start_service()
+{
+	local service="$1"
+
+	[ -x "/etc/init.d/$service" ] || {
+		log "Service $service is not installed"
+		return 0
+	}
+
+	log "Starting $service"
+
+	if /etc/init.d/"$service" start >/dev/null 2>&1; then
+
+		sleep 1
+
+		if is_running "$service"; then
+			log "$service started successfully"
+			return 0
+		else
+			log "WARNING: $service start command succeeded but service is not running"
+			return 1
+		fi
+
+	else
+		log "WARNING: failed to start $service"
+		return 1
+	fi
+}
+
+wait_for_mount()
+{
+	local elapsed=0
+
+	log "Waiting for HDD mount at $MOUNT_POINT"
+
+	while [ "$elapsed" -lt "$MAX_WAIT" ]; do
+
+		if is_mounted; then
+			log "HDD mounted at $MOUNT_POINT after ${elapsed}s"
+			return 0
+		fi
+
+		sleep "$WAIT_STEP"
+		elapsed=$((elapsed + WAIT_STEP))
+
+	done
+
+	if is_mounted; then
+		log "HDD mounted at $MOUNT_POINT after ${elapsed}s"
+		return 0
+	fi
+
+	log "ERROR: HDD was not mounted at $MOUNT_POINT within ${MAX_WAIT}s"
+	return 1
+}
+
 case "$1" in
 
 	add)
-		sleep 2
 
-		if ! is_mounted; then
-			log "HDD is not mounted at $MOUNT_POINT"
+		if ! wait_for_mount; then
 			exit 0
 		fi
 
@@ -32,14 +107,16 @@ case "$1" in
 
 		if [ -s "$STATE_FILE" ]; then
 
+			log "Restoring services saved before HDD removal"
+
 			while IFS= read -r service; do
+
 				[ -n "$service" ] || continue
 
 				if [ -x "/etc/init.d/$service" ]; then
-					log "Starting $service"
-
-					/etc/init.d/"$service" start >/dev/null 2>&1 || \
-						log "WARNING: failed to start $service"
+					start_service "$service"
+				else
+					log "Saved service $service is not installed"
 				fi
 
 			done < "$STATE_FILE"
@@ -53,19 +130,18 @@ case "$1" in
 			# Start services that are enabled in UCI/init.
 			#
 
+			log "No saved service state found"
+
 			for service in $SERVICES; do
 
-				if [ -x "/etc/init.d/$service" ] && \
-				   /etc/init.d/"$service" enabled >/dev/null 2>&1; then
-
-					log "Starting enabled service $service"
-
-					/etc/init.d/"$service" start >/dev/null 2>&1 || true
+				if is_enabled "$service"; then
+					start_service "$service"
 				fi
 
 			done
 
 		fi
+
 		;;
 
 esac

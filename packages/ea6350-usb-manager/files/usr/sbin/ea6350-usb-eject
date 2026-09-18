@@ -24,55 +24,51 @@ is_mounted()
 	grep -qs "[[:space:]]${MOUNT_POINT}[[:space:]]" /proc/mounts
 }
 
-#
-# Already unmounted.
-#
-
 if ! is_mounted; then
 	echo "USB HDD is already unmounted."
 	exit 0
 fi
-
-#
-# Remember services which are currently running.
-#
 
 : > "$STATE_FILE"
 
 for service in $SERVICES; do
 	if is_running "$service"; then
 		echo "$service" >> "$STATE_FILE"
+		log "Saving running service: $service"
 	fi
 done
 
-#
-# Stop services.
-#
-
 for service in $SERVICES; do
+
 	if grep -qx "$service" "$STATE_FILE" 2>/dev/null; then
+
 		log "Stopping $service"
 
 		/etc/init.d/"$service" stop >/dev/null 2>&1 || {
 			echo "ERROR: cannot stop $service"
+			echo "DO NOT disconnect the USB cable."
 			exit 1
 		}
-	fi
-done
 
-#
-# Flush all pending writes.
-#
+		sleep 1
+
+		if is_running "$service"; then
+			echo "ERROR: $service is still running."
+			echo "The HDD was NOT safely removed."
+			echo "DO NOT disconnect the USB cable."
+			exit 1
+		fi
+	fi
+
+done
 
 sync
 sleep 2
 
-#
-# If fuser exists, check for remaining users.
-#
-
 if command -v fuser >/dev/null 2>&1; then
+
 	if fuser -m "$MOUNT_POINT" >/dev/null 2>&1; then
+
 		sync
 		sleep 2
 
@@ -83,11 +79,8 @@ if command -v fuser >/dev/null 2>&1; then
 			exit 1
 		fi
 	fi
-fi
 
-#
-# Unmount.
-#
+fi
 
 log "Unmounting $MOUNT_POINT"
 
