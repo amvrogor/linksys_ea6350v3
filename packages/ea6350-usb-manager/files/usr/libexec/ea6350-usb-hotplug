@@ -1,11 +1,12 @@
 #!/bin/sh
 
 MOUNT_POINT="/mnt/sda"
+MEDIA_DIR="/mnt/sda/Archive"
 STATE_FILE="/tmp/ea6350-usb-services"
 
 SERVICES="samba4 vsftpd minidlna"
 
-MAX_WAIT=30
+MAX_WAIT=40
 WAIT_STEP=2
 
 log()
@@ -16,6 +17,11 @@ log()
 is_mounted()
 {
 	grep -qs "[[:space:]]${MOUNT_POINT}[[:space:]]" /proc/mounts
+}
+
+media_ready()
+{
+	[ -d "$MEDIA_DIR" ]
 }
 
 is_enabled()
@@ -65,6 +71,52 @@ start_service()
 	fi
 }
 
+restart_minidlna()
+{
+	local service="minidlna"
+
+	[ -x "/etc/init.d/$service" ] || {
+		log "Service $service is not installed"
+		return 0
+	}
+
+	log "Restarting MiniDLNA after HDD mount"
+
+	#
+	# Do not use "restart" here.
+	#
+	# On this OpenWrt installation the init script may report:
+	#   Command failed: Not found
+	#
+	# Explicit stop + start is more reliable.
+	#
+
+	if is_running "$service"; then
+		log "Stopping existing minidlna process"
+		/etc/init.d/"$service" stop >/dev/null 2>&1 || true
+		sleep 2
+	fi
+
+	log "Starting minidlna"
+
+	if /etc/init.d/"$service" start >/dev/null 2>&1; then
+
+		sleep 3
+
+		if is_running "$service"; then
+			log "minidlna started successfully"
+			return 0
+		else
+			log "WARNING: minidlna start command succeeded but service is not running"
+			return 1
+		fi
+
+	else
+		log "WARNING: failed to start minidlna"
+		return 1
+	fi
+}
+
 wait_for_mount()
 {
 	local elapsed=0
@@ -92,13 +144,76 @@ wait_for_mount()
 	return 1
 }
 
+wait_for_media()
+{
+	local elapsed=0
+
+	log "Waiting for media directory $MEDIA_DIR"
+
+	while [ "$elapsed" -lt "$MAX_WAIT" ]; do
+
+		if media_ready; then
+			log "Media directory is ready after ${elapsed}s"
+			return 0
+		fi
+
+		sleep "$WAIT_STEP"
+		elapsed=$((elapsed + WAIT_STEP))
+
+	done
+
+	if media_ready; then
+		log "Media directory is ready after ${elapsed}s"
+		return 0
+	fi
+
+	log "WARNING: media directory $MEDIA_DIR was not found within ${MAX_WAIT}s"
+	return 1
+}
+
+restore_service()
+{
+	local service="$1"
+
+	case "$service" in
+
+		minidlna)
+			restart_minidlna
+			;;
+
+		*)
+			start_service "$service"
+			;;
+
+	esac
+}
+
 case "$1" in
 
 	add)
 
+		#
+		# First wait for the actual mount.
+		#
+
 		if ! wait_for_mount; then
 			exit 0
 		fi
+
+		#
+		# Make sure the filesystem is really accessible.
+		#
+
+		if ! wait_for_media; then
+			log "WARNING: HDD mounted, but media directory is not ready"
+		fi
+
+		#
+		# Give NTFS / block-mount a short settling period.
+		#
+
+		log "Waiting for filesystem to settle"
+		sleep 3
 
 		#
 		# If we know which services were running before
@@ -114,7 +229,7 @@ case "$1" in
 				[ -n "$service" ] || continue
 
 				if [ -x "/etc/init.d/$service" ]; then
-					start_service "$service"
+					restore_service "$service"
 				else
 					log "Saved service $service is not installed"
 				fi
@@ -135,7 +250,7 @@ case "$1" in
 			for service in $SERVICES; do
 
 				if is_enabled "$service"; then
-					start_service "$service"
+					restore_service "$service"
 				fi
 
 			done
