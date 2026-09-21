@@ -1,9 +1,0 @@
-#!/bin/sh
-
-[ "${ACTION:-}" = "add" ] || exit 0
-
-(
-	/usr/libexec/ea6350-usb-hotplug add
-) >/dev/null 2>&1 &
-
-exit 0

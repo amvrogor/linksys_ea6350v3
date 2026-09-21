@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-usb-manager
-PKG_VERSION:=1.0.4
+PKG_VERSION:=1.0.5
 PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk
@@ -23,9 +23,9 @@ define Build/Compile
 endef
 
 define Package/ea6350-usb-manager/install
-	$(INSTALL_DIR) $(1)/etc/hotplug.d/mount
-	$(INSTALL_BIN) ./files/etc/hotplug.d/mount/98-ea6350-usb-manager \
-		$(1)/etc/hotplug.d/mount/98-ea6350-usb-manager
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/block
+	$(INSTALL_BIN) ./files/etc/hotplug.d/block/98-ea6350-usb-manager \
+		$(1)/etc/hotplug.d/block/98-ea6350-usb-manager
 
 	$(INSTALL_DIR) $(1)/usr/libexec
 	$(INSTALL_BIN) ./files/usr/libexec/ea6350-usb-hotplug \

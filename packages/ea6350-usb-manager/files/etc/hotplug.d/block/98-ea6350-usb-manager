@@ -1,0 +1,38 @@
+#!/bin/sh
+
+#
+# Linksys EA6350v3 USB HDD Manager
+#
+# Start USB service restoration when a partition is added.
+#
+# The normal OpenWrt block hotplug handler (10-mount)
+# performs the actual automatic mount.
+#
+# We only launch the USB Manager after the partition
+# appears and let ea6350-usb-hotplug wait until the
+# mount point and media directory are really available.
+#
+
+[ "${ACTION:-}" = "add" ] || exit 0
+
+#
+# We need a partition event, not the parent disk event.
+#
+[ "${DEVTYPE:-}" = "partition" ] || exit 0
+
+#
+# This router uses the external HDD as /dev/sda1.
+#
+case "${DEVNAME:-}" in
+	sda1)
+		;;
+	*)
+		exit 0
+		;;
+esac
+
+(
+	/usr/libexec/ea6350-usb-hotplug add
+) >/dev/null 2>&1 &
+
+exit 0
