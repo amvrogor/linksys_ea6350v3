@@ -67,6 +67,67 @@ jobs:
 
 
       # ============================================================
+      # INSTALL PERSISTENT APK SIGNING KEY
+      #
+      # The private key is stored only in GitHub Secrets.
+      #
+      # OpenWrt will use:
+      #   openwrt/private-key.pem
+      #   openwrt/public-key.pem
+      #
+      # base-files will install the public key into:
+      #   /etc/apk/keys/
+      # ============================================================
+
+      - name: Install persistent APK signing key
+        env:
+          EA6350_APK_PRIVATE_KEY: ${{ secrets.EA6350_APK_PRIVATE_KEY }}
+        run: |
+          set -e
+
+          echo
+          echo "========================================"
+          echo " INSTALL APK SIGNING KEY"
+          echo "========================================"
+
+          if [ -z "$EA6350_APK_PRIVATE_KEY" ]; then
+            echo
+            echo "ERROR:"
+            echo "GitHub Secret EA6350_APK_PRIVATE_KEY is not set."
+            exit 1
+          fi
+
+          printf '%s\n' \
+            "$EA6350_APK_PRIVATE_KEY" \
+            > openwrt/private-key.pem
+
+          chmod 600 \
+            openwrt/private-key.pem
+
+          echo
+          echo "=== Generate public key ==="
+
+          openssl ec \
+            -in openwrt/private-key.pem \
+            -pubout \
+            -out openwrt/public-key.pem
+
+          chmod 644 \
+            openwrt/public-key.pem
+
+          echo
+          echo "=== Verify signing key ==="
+
+          openssl ec \
+            -in openwrt/private-key.pem \
+            -check \
+            -noout
+
+          echo
+          echo "[OK] Persistent APK signing key installed"
+
+
+      # ============================================================
       # INITIAL DO_STAGE2
       # ============================================================
 
@@ -905,6 +966,145 @@ jobs:
           set -e
 
           make package/ea6350-usb-manager/compile V=s
+
+
+      # ============================================================
+      # SIGN CUSTOM EA6350v3 APK PACKAGES
+      #
+      # OpenWrt 25.12 signs package indexes by default,
+      # but individual APK files are signed here explicitly.
+      #
+      # We sign all project-specific packages:
+      #   ea6350-*.apk
+      #   homeusb-*.apk
+      #
+      # The same persistent private key is used for every build.
+      # ============================================================
+
+      - name: Sign custom EA6350v3 APK packages
+        working-directory: openwrt
+        run: |
+          set -e
+
+          APK="staging_dir/host/bin/apk"
+          KEY="private-key.pem"
+
+          echo
+          echo "========================================"
+          echo " SIGN CUSTOM APK PACKAGES"
+          echo "========================================"
+
+          test -x "$APK"
+          test -f "$KEY"
+          test -f "public-key.pem"
+
+          echo
+          echo "=== Finding custom APK packages ==="
+
+          mapfile -d '' PACKAGES < <(
+            find bin/packages \
+              -type f \
+              \( \
+                -name 'ea6350-*.apk' \
+                -o \
+                -name 'homeusb-*.apk' \
+              \) \
+              -print0 \
+              | sort -z
+          )
+
+          if [ "${#PACKAGES[@]}" -eq 0 ]; then
+            echo
+            echo "ERROR:"
+            echo "No custom EA6350v3 APK packages were found."
+
+            echo
+            echo "Available APK packages:"
+
+            find bin/packages \
+              -type f \
+              -name '*.apk' \
+              | sort
+
+            exit 1
+          fi
+
+          echo
+          echo "Found ${#PACKAGES[@]} custom package(s)."
+
+          for PKG in "${PACKAGES[@]}"; do
+
+            echo
+            echo "Signing:"
+            echo "  $PKG"
+
+            "$APK" adbsign \
+              --sign-key "$KEY" \
+              "$PKG"
+
+          done
+
+          echo
+          echo "[OK] All custom APK packages signed"
+
+
+      # ============================================================
+      # VERIFY CUSTOM APK SIGNATURES
+      # ============================================================
+
+      - name: Verify custom EA6350v3 APK signatures
+        working-directory: openwrt
+        run: |
+          set -e
+
+          APK="staging_dir/host/bin/apk"
+
+          echo
+          echo "========================================"
+          echo " VERIFY CUSTOM APK SIGNATURES"
+          echo "========================================"
+
+          test -x "$APK"
+          test -f "public-key.pem"
+
+          mapfile -d '' PACKAGES < <(
+            find bin/packages \
+              -type f \
+              \( \
+                -name 'ea6350-*.apk' \
+                -o \
+                -name 'homeusb-*.apk' \
+              \) \
+              -print0 \
+              | sort -z
+          )
+
+          if [ "${#PACKAGES[@]}" -eq 0 ]; then
+            echo
+            echo "ERROR:"
+            echo "No custom APK packages were found for verification."
+            exit 1
+          fi
+
+          for PKG in "${PACKAGES[@]}"; do
+
+            echo
+            echo "Verifying:"
+            echo "  $PKG"
+
+            "$APK" \
+              --keys-dir "$PWD" \
+              verify \
+              "$PKG"
+
+            echo "[OK] Signature verified"
+
+          done
+
+          echo
+          echo "========================================"
+          echo " ALL CUSTOM APK SIGNATURES ARE VALID"
+          echo "========================================"
 
 
       # ============================================================
