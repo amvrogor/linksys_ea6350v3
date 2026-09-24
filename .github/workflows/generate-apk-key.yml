@@ -1,0 +1,49 @@
+name: Generate APK signing key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-key:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Generate persistent APK signing key
+        run: |
+          set -e
+
+          mkdir -p key
+
+          echo "Generating P-256 EC private key..."
+
+          openssl ecparam \
+            -name prime256v1 \
+            -genkey \
+            -noout \
+            -out key/ea6350-apk-private.pem
+
+          echo "Generating public key..."
+
+          openssl ec \
+            -in key/ea6350-apk-private.pem \
+            -pubout \
+            -out key/ea6350-apk-public.pem
+
+          echo
+          echo "Checking private key..."
+
+          openssl ec \
+            -in key/ea6350-apk-private.pem \
+            -check \
+            -noout
+
+          echo
+          echo "Public key:"
+          cat key/ea6350-apk-public.pem
+
+      - name: Upload key files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ea6350-apk-signing-key
+          path: key/
+          retention-days: 7
