@@ -993,12 +993,12 @@ jobs:
           echo "========================================"
           echo " SIGN CUSTOM APK PACKAGES"
           echo "========================================"
+          echo
 
           test -x "$APK"
           test -f "$KEY"
           test -f "public-key.pem"
 
-          echo
           echo "=== Finding custom APK packages ==="
 
           mapfile -d '' PACKAGES < <(
@@ -1017,15 +1017,12 @@ jobs:
             echo
             echo "ERROR:"
             echo "No custom EA6350v3 APK packages were found."
-
             echo
             echo "Available APK packages:"
-
             find bin/packages \
               -type f \
               -name '*.apk' \
               | sort
-
             exit 1
           fi
 
@@ -1033,15 +1030,17 @@ jobs:
           echo "Found ${#PACKAGES[@]} custom package(s)."
 
           for PKG in "${PACKAGES[@]}"; do
-
             echo
             echo "Signing:"
             echo "  $PKG"
 
             "$APK" adbsign \
+              --allow-untrusted \
               --sign-key "$KEY" \
               "$PKG"
 
+            echo "[OK] Signed:"
+            echo "  $PKG"
           done
 
           echo
@@ -1425,7 +1424,7 @@ jobs:
       # ============================================================
 
       - name: Show package output
-        run: |
+      run: |
           echo
           echo "========================================"
           echo " PACKAGE OUTPUT"
