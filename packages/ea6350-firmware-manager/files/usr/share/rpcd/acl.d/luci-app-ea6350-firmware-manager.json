@@ -1,6 +1,7 @@
 {
 	"luci-app-ea6350-firmware-manager": {
 		"description": "EA6350 Firmware Manager",
+
 		"read": {
 			"file": {
 				"/usr/sbin/ea6350-firmware-manager-status": [
@@ -8,8 +9,15 @@
 				]
 			}
 		},
+
 		"write": {
+			"cgi-io": [
+				"upload"
+			],
 			"file": {
+				"/tmp/ea6350-firmware.img": [
+					"write"
+				],
 				"/usr/sbin/ea6350-firmware-manager-upgrade": [
 					"exec"
 				]

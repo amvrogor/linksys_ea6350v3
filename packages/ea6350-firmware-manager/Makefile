@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ea6350-firmware-manager
 PKG_VERSION:=1.0.17
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=EA6350 Home Edition
 PKGARCH:=all
@@ -16,7 +16,6 @@ define Package/ea6350-firmware-manager
   TITLE:=Linksys EA6350v3 firmware slot manager
   DEPENDS:=+uboot-envtools +luci-base
 endef
-
 
 define Package/ea6350-firmware-manager/description
   Firmware slot status and upgrade manager for Linksys EA6350v3.

@@ -97,11 +97,11 @@ return view.extend({
 			}
 			else {
 				warning =
-					_('Current-slot flashing is an advanced operation. ') +
-					_('The backend currently performs validation only and will not ') +
-					_('overwrite the running firmware.') +
+					_('Current-slot flashing is an advanced and potentially destructive operation. ') +
+					_('The selected firmware will replace the currently running firmware slot. ') +
+					_('The inactive boot slot will not be changed.') +
 					'\n\n' +
-					_('Continue with validation?');
+					_('Continue?');
 			}
 
 			if (!confirm(warning))
